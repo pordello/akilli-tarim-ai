@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (ZAMAN BAZLI AKILLI SİMÜLASYON)
+# PROJE: AI Destekli Akıllı Tarım Platformu (BULUT YAYINI - TEMİZ GÖRÜNÜM)
 # ==============================================================================
 
 import streamlit as st
@@ -24,20 +24,14 @@ def gercek_hava_durumu_getir(enlem, boylam):
 
 # --- YENİ: ZAMAN BAZLI AKILLI NEM SİMÜLASYONU ---
 def akilli_nem_simulasyonu():
-    """Günün saatine göre gerçekçi toprak nemi üretir."""
     su_anki_saat = datetime.now().hour
-    
     if 6 <= su_anki_saat < 12:
-        # Sabah: Çiğ düşmüş veya gece sulanmış olabilir, buharlaşma yeni başlıyor.
         return random.randint(40, 70)
     elif 12 <= su_anki_saat < 18:
-        # Öğle/İkindi: Güneş tepede, buharlaşma maksimum. Toprak kuruyor.
         return random.randint(15, 35)
     elif 18 <= su_anki_saat < 22:
-        # Akşam: Güneş battı, kuruma durdu, nem dengeleniyor.
         return random.randint(30, 50)
     else:
-        # Gece: Buharlaşma yok, nem içeride hapsoluyor.
         return random.randint(50, 75)
 
 # --- 1. VERİTABANI KURULUMU ---
@@ -178,7 +172,7 @@ else:
         else:
             st.info("Personel yetkilendirme alanı yalnızca Admin rolüne açıktır.")
 
-    # --- SENSÖR VERİLERİ (AKILLI SİMÜLASYON İLE) ---
+    # --- SENSÖR VERİLERİ ---
     if "toprak_nemi" not in st.session_state:
         st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
         gercek_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
@@ -211,7 +205,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
 
     st.markdown("---")
 
-    # YENİLEME BUTONU (Akıllı Simülasyonu Tetikler)
     col_yenile, _ = st.columns([2, 8])
     with col_yenile:
         if st.button("🔄 Sensörleri Oku (Canlı API Veri Al)", use_container_width=True):
@@ -223,11 +216,9 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 st.session_state["canli_sicaklik"] = random.randint(22, 38)
                 st.toast("⚠️ API'ye ulaşılamadı, yedek simülasyon devrede.")
             
-            # YENİ: Toprak nemi artık günün saatine göre mantıklı bir aralıkta geliyor
             st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
             st.rerun()
 
-    # YAPAY ZEKA KARAR ALGORİTMASI
     if toprak_nemi < 30 and canli_sicaklik > 30:
         ai_mesaj = "🔥 KRİTİK: Toprak kuru, hava sıcak! Acil sulama başlatıldı."
         ai_durum = "error"
@@ -252,7 +243,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
     col_box1, col_box2, col_box3 = st.columns(3)
     
     with col_box1:
-        st.markdown("<h4 style='color: #4a90e2;'>📉 Canlı Metrikler & AI Vana</h4>", unsafe_allow_html=True)
+        st.subheader("📉 Canlı Metrikler & AI Vana", divider="blue")
         st.write("Hava Sıcaklığı (Canlı API) / Mahsul")
         st.subheader(f"{canli_sicaklik} °C")
         st.caption(f"⬆️ {urun_turu}")
@@ -270,21 +261,18 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             
         if st.button("💾 Analizi Günlükle", use_container_width=True):
             su_anki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open("tarla_gunlugu.txt", "a", encoding="utf-8") as dosya:
-                dosya.write(f"[{su_anki_zaman}] Kullanici: {kullanici} | Nem: %{toprak_nemi} | Sicaklik: {canli_sicaklik}°C | Karar: {ai_mesaj}\n")
-            
             sql_analiz_kaydet(kullanici, int(toprak_nemi), float(canli_sicaklik), ai_mesaj)
-            st.toast("Veriler veritabanına ve günlük dosyasına başarıyla işlendi!")
+            st.toast("Veriler veritabanına başarıyla işlendi!")
             st.rerun()
 
     with col_box2:
-        st.markdown("<h4 style='color: #2ecc71;'>🗺️ Tarlanın Coğrafi Konumu</h4>", unsafe_allow_html=True)
+        st.subheader("🗺️ Tarlanın Coğrafi Konumu", divider="green")
         tarla_df = pd.DataFrame({'lat': [t_enlem], 'lon': [t_boylam]})
         st.map(tarla_df, size=14, zoom=11)
         st.caption(f"📍 Enlem: {t_enlem} | Boylam: {t_boylam} (API Lokasyonu)")
 
     with col_box3:
-        st.markdown("<h4 style='color: #f39c12;'>📊 Verimlilik & Tasarruf Raporu</h4>", unsafe_allow_html=True)
+        st.subheader("📊 Verimlilik & Tasarruf Raporu", divider="orange")
         st.write("AI Su Tasarruf Başarısı")
         st.subheader(f"%{int(tasarruf_orani * 100)}")
         st.progress(tasarruf_orani)
