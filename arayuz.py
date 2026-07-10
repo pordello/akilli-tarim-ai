@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (OTOMATİK LOKASYON / GEOCODING EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (HASTALIK RİSK ANALİZ MODÜLÜ ENTEGRELİ)
 # ==============================================================================
 
 import streamlit as st
@@ -12,23 +12,20 @@ from datetime import datetime
 
 st.set_page_config(page_title="AI Akıllı Tarım Paneli", page_icon="🌾", layout="wide")
 
-# --- YENİ: ADRESTEN GERÇEK KOORDİNAT BULMA API'Sİ (Geocoding) ---
+# --- ADRESTEN GERÇEK KOORDİNAT BULMA API'Sİ (Geocoding) ---
 def koordinat_bul(il, ilce):
-    """Kullanıcının girdiği il/ilçe bilgisini harita koordinatlarına (enlem, boylam) çevirir."""
     try:
         adres = f"{ilce}, {il}, Turkey"
         url = f"https://nominatim.openstreetmap.org/search?q={adres}&format=json&limit=1"
-        # API'nin engellememesi için tarayıcı kimliği gönderiyoruz
         headers = {'User-Agent': 'AkilliTarimProjesi/1.0'} 
         cevap = requests.get(url, headers=headers, timeout=5)
         veri = cevap.json()
-        
         if len(veri) > 0:
             return float(veri[0]['lat']), float(veri[0]['lon'])
         else:
-            return 39.0, 35.0 # Bulunamazsa Türkiye Merkezi
+            return 39.0, 35.0
     except:
-        return 39.0, 35.0 # İnternet hatasında Türkiye Merkezi
+        return 39.0, 35.0
 
 # --- GERÇEK ZAMANLI HAVA DURUMU API FONKSİYONU ---
 def gercek_hava_durumu_getir(enlem, boylam):
@@ -52,7 +49,46 @@ def akilli_nem_simulasyonu():
     else:
         return random.randint(50, 75)
 
-# --- 1. VERİTABANI KURULUMU ---
+# --- YENİ: YAPAY ZEKA HASTALIK RİSK TAHMİN MOTORU ---
+def ai_hastalik_risk_analizi(urun, sicaklik, nem):
+    """Hava durumu verilerine göre ürüne özel hastalık riskini hesaplar."""
+    risk_skoru = 10 # Başlangıç baz risk skoru (%)
+    detay_mesaj = "Hava şartları mahsul sağlığı için elverişli görünüyor."
+    hastalik_adi = "Mantar ve Bakteri Riski"
+
+    if urun == "Pamuk":
+        hastalik_adi = "Pamukta Solgunluk & Kırmızı Örümcek"
+        if sicaklik > 32 and nem < 30:
+            risk_skoru = 85
+            detay_mesaj = "🚨 Yüksek sıcaklık ve düşük nem Kırmızı Örümcek zararlısını tetikler! Sahayı kontrol edin."
+        elif sicaklik > 25 and nem > 60:
+            risk_skoru = 60
+            detay_mesaj = "⚠️ Nemli ve sıcak hava Verticillium Solgunluğu mantarını tetikleyebilir."
+            
+    elif urun == "Zeytin":
+        hastalik_adi = "Zeytin Halkalı Leke Hastalığı"
+        if 15 <= sicaklik <= 22 and nem > 70:
+            risk_skoru = 90
+            detay_mesaj = "🚨 Tam Halkalı Leke mantarının üreme sıcaklığı! Aşırı nem riski maksimuma çıkardı."
+        elif sicaklik > 28:
+            risk_skoru = 20
+            detay_mesaj = "✅ Yüksek sıcaklık zeytin sineği ve mantar faaliyetlerini yavaşlatıyor."
+
+    elif urun == "Buğday":
+        hastalik_adi = "Buğdayda Pas Hastalığı (Küf)"
+        if 10 <= sicaklik <= 20 and nem > 65:
+            risk_skoru = 75
+            detay_mesaj = "⚠️ Serin ve nemli hava pas (püskül) hastalığı için ideal ortam oluşturuyor."
+            
+    else: # Diğer genel ürünler için kök çürüklüğü riski
+        hastalik_adi = "Kök Çürüklüğü & Mantar"
+        if nem > 75:
+            risk_skoru = 80
+            detay_mesaj = "🚨 Aşırı toprak nemi köklerin nefes almasını engelliyor ve çürüme mantarlarını besliyor!"
+
+    return hastalik_adi, risk_skoru, detay_mesaj
+
+# --- VERİTABANI KURULUMU ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -75,14 +111,12 @@ def veritabani_otomatik_kur():
         sicaklik INTEGER NOT NULL, karar TEXT NOT NULL, tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-    
     try:
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12"))
         baglanti.commit()
     except sqlite3.IntegrityError:
         pass
-
     baglanti.close()
 
 veritabani_otomatik_kur()
@@ -108,16 +142,12 @@ def sql_calisan_ekle(k_adi, sifre, t_adi, enlem, boylam, email, urun, rol, ada, 
     except:
         return False
 
-# DIŞARIDAN MÜŞTERİ KAYIT FONKSİYONU (KOORDİNAT BULUCU ENTEGRE EDİLDİ)
 def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel):
     try:
         baglanti = sqlite3.connect("akilli_tarim.db")
         kursor = baglanti.cursor()
         tam_tarla_adi = f"{tarla} ({il.capitalize()} / {ilce.capitalize()})"
-        
-        # Kullanıcının girdiği il/ilçeyi anında koordinata çeviriyoruz
         v_enlem, v_boylam = koordinat_bul(il, ilce)
-        
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        (k_adi, sifre, tam_tarla_adi, v_enlem, v_boylam, email, urun, "Müşteri/Çiftçi", ada, parsel))
         baglanti.commit()
@@ -205,18 +235,16 @@ if not st.session_state["giris_yapildi"]:
                 k_tarla = st.text_input("Tarlanıza Vermek İstediğiniz İsim (Örn: Kuzey Yamacı)")
                 k_urun = st.selectbox("Yetiştirilen Ana Mahsul", ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"])
                 
-                # Butona basıldığında yükleme animasyonu çıkacak
                 kayit_buton = st.form_submit_button("✅ Hesabı Oluştur", use_container_width=True)
                 
                 if kayit_buton:
                     if k_adi and k_sifre and k_email and k_il and k_ilce and k_ada and k_parsel:
-                        with st.spinner("🗺️ Harita koordinatları bulunuyor ve kayıt yapılıyor..."):
+                        with st.spinner("🗺️ Harita koordinatları bulunuyor..."):
                             sonuc = sql_yeni_musteri_kayit(k_adi, k_sifre, k_tarla, k_il, k_ilce, k_email, k_urun, k_ada, k_parsel)
-                        
                         if sonuc:
-                            st.success("🎉 Kayıt başarıyla tamamlandı! Sisteme Giriş sekmesinden hemen giriş yapabilirsiniz.")
+                            st.success("🎉 Kayıt başarıyla tamamlandı! Giriş sekmesinden bağlanabilirsiniz.")
                         else:
-                            st.error("⚠️ Bu kullanıcı adı zaten sistemde kayıtlı! Lütfen başka bir kullanıcı adı seçin.")
+                            st.error("⚠️ Bu kullanıcı adı zaten sistemde kayıtlı!")
                     else:
                         st.warning("Lütfen (*) ile işaretli tüm zorunlu alanları doldurun.")
 
@@ -297,7 +325,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             else:
                 st.session_state["canli_sicaklik"] = random.randint(22, 38)
                 st.toast("⚠️ API'ye ulaşılamadı, yedek simülasyon devrede.")
-            
             st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
             st.rerun()
 
@@ -335,14 +362,26 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
         st.caption("⬆️ Hedef: %40-%70")
         
         if ai_durum == "error":
-            st.error(f"**AI KARARI:**\n\n{ai_mesaj}")
+            st.error(f"**AI SULAMA KARARI:**\n\n{ai_mesaj}")
         elif ai_durum == "warning":
-            st.warning(f"**AI KARARI:**\n\n{ai_mesaj}")
+            st.warning(f"**AI SULAMA KARARI:**\n\n{ai_mesaj}")
         else:
-            st.success(f"**AI KARARI:**\n\n{ai_mesaj}")
+            st.success(f"**AI SULAMA KARARI:**\n\n{ai_mesaj}")
             
+        # YENİ: HASTALIK RİSK ANALİZ GÖSTERİMİ
+        st.write(" ")
+        h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi)
+        st.write(f"🦠 **AI Hastalık Risk Analizi ({h_adi})**")
+        st.progress(h_skor / 100)
+        if h_skor >= 75:
+            st.error(f"Risk Oranı: %{h_skor}\n\n{h_mesaj}")
+        elif h_skor >= 40:
+            st.warning(f"Risk Oranı: %{h_skor}\n\n{h_mesaj}")
+        else:
+            st.success(f"Risk Oranı: %{h_skor}\n\n{h_mesaj}")
+
+        st.write(" ")
         if st.button("💾 Analizi Günlükle", use_container_width=True):
-            su_anki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             sql_analiz_kaydet(kullanici, int(toprak_nemi), float(canli_sicaklik), ai_mesaj)
             st.toast("Veriler veritabanına başarıyla işlendi!")
             st.rerun()
@@ -370,7 +409,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             st.write("Henüz veri bulunmuyor.")
 
         st.markdown(" ")
-        
         df_tum_veri = sql_tum_veriyi_getir(kullanici)
         if not df_tum_veri.empty:
             csv_veri = df_tum_veri.to_csv(index=False).encode('utf-8')
