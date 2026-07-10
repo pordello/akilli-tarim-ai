@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (BULUT YAYINI - TEMİZ GÖRÜNÜM)
+# PROJE: AI Destekli Akıllı Tarım Platformu (ORTALANMIŞ GİRİŞ VE YENİ KAYIT SİSTEMİ)
 # ==============================================================================
 
 import streamlit as st
@@ -90,6 +90,23 @@ def sql_calisan_ekle(k_adi, sifre, t_adi, enlem, boylam, email, urun, rol, ada, 
     except:
         return False
 
+# YENİ: DIŞARIDAN MÜŞTERİ KAYIT FONKSİYONU
+def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel):
+    try:
+        baglanti = sqlite3.connect("akilli_tarim.db")
+        kursor = baglanti.cursor()
+        tam_tarla_adi = f"{tarla} ({il.capitalize()} / {ilce.capitalize()})"
+        # Varsayılan Türkiye koordinatları (İleride API ile adresten çekilebilir)
+        v_enlem, v_boylam = 39.0, 35.0 
+        
+        kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       (k_adi, sifre, tam_tarla_adi, v_enlem, v_boylam, email, urun, "Müşteri/Çiftçi", ada, parsel))
+        baglanti.commit()
+        baglanti.close()
+        return True
+    except sqlite3.IntegrityError:
+        return False # Kullanıcı adı zaten varsa hata döner
+
 def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -122,20 +139,67 @@ if "giris_yapildi" not in st.session_state:
     st.session_state["aktif_kullanici"] = ""
     st.session_state["kullanici_bilgileri"] = None
 
-# --- GİRİŞ EKRANI ---
+# --- GİRİŞ VE YENİ KAYIT EKRANI ---
 if not st.session_state["giris_yapildi"]:
-    st.title("🌾 AI Akıllı Tarım Yönetim Girişi")
-    kullanici_adi = st.text_input("Kullanıcı Adı:", key="login_kadi")
-    sifre = st.text_input("Şifre:", type="password", key="login_sifre")
-    if st.button("Sisteme Bağlan", use_container_width=True):
-        kullanici_verisi = sql_kullanici_kontrol(kullanici_adi, sifre)
-        if kullanici_verisi:
-            st.session_state["giris_yapildi"] = True
-            st.session_state["aktif_kullanici"] = kullanici_adi
-            st.session_state["kullanici_bilgileri"] = kullanici_verisi
-            st.rerun()
-        else:
-            st.error("Hatalı Bilgiler!")
+    # Sayfayı ortalamak için 3 sütuna bölüyoruz
+    bosluk_sol, icerik_orta, bosluk_sag = st.columns([1.5, 2.5, 1.5])
+    
+    with icerik_orta:
+        st.markdown("<h2 style='text-align: center; color: #2ecc71;'>🌾 AI Akıllı Tarım Ağı</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Sisteme giriş yapın veya yeni bir çiftçi hesabı oluşturun.</p>", unsafe_allow_html=True)
+        st.write("")
+        
+        sekme_giris, sekme_kayit = st.tabs(["🔑 Sisteme Giriş", "📝 Yeni Kayıt Ol"])
+        
+        # 1. SEKME: GİRİŞ YAP
+        with sekme_giris:
+            st.write("")
+            kullanici_adi = st.text_input("Kullanıcı Adı:", key="login_kadi")
+            sifre = st.text_input("Şifre:", type="password", key="login_sifre")
+            if st.button("🚀 Sisteme Bağlan", use_container_width=True, type="primary"):
+                kullanici_verisi = sql_kullanici_kontrol(kullanici_adi, sifre)
+                if kullanici_verisi:
+                    st.session_state["giris_yapildi"] = True
+                    st.session_state["aktif_kullanici"] = kullanici_adi
+                    st.session_state["kullanici_bilgileri"] = kullanici_verisi
+                    st.rerun()
+                else:
+                    st.error("Hatalı Kullanıcı Adı veya Şifre!")
+                    
+        # 2. SEKME: YENİ KAYIT
+        with sekme_kayit:
+            with st.form("yeni_kayit_formu"):
+                st.subheader("Yeni Tarla / Çiftçi Kaydı")
+                st.caption("Lütfen hesap ve lokasyon bilgilerinizi eksiksiz doldurun.")
+                
+                k_adi = st.text_input("Belirleyeceğiniz Kullanıcı Adı (*)")
+                k_sifre = st.text_input("Şifre (*)", type="password")
+                k_email = st.text_input("E-Posta Adresi (*)")
+                
+                st.write("---")
+                st.write("**📍 Lokasyon ve Parsel Bilgileri**")
+                col_k1, col_k2 = st.columns(2)
+                with col_k1:
+                    k_il = st.text_input("İl (*)")
+                    k_ada = st.text_input("Ada No (*)")
+                with col_k2:
+                    k_ilce = st.text_input("İlçe (*)")
+                    k_parsel = st.text_input("Parsel No (*)")
+                    
+                k_tarla = st.text_input("Tarlanıza Vermek İstediğiniz İsim (Örn: Kuzey Yamacı)")
+                k_urun = st.selectbox("Yetiştirilen Ana Mahsul", ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"])
+                
+                kayit_buton = st.form_submit_button("✅ Hesabı Oluştur", use_container_width=True)
+                
+                if kayit_buton:
+                    if k_adi and k_sifre and k_email and k_il and k_ilce and k_ada and k_parsel:
+                        sonuc = sql_yeni_musteri_kayit(k_adi, k_sifre, k_tarla, k_il, k_ilce, k_email, k_urun, k_ada, k_parsel)
+                        if sonuc:
+                            st.success("🎉 Kayıt başarıyla tamamlandı! Yukarıdaki 'Sisteme Giriş' sekmesinden hemen giriş yapabilirsiniz.")
+                        else:
+                            st.error("⚠️ Bu kullanıcı adı zaten sistemde kayıtlı! Lütfen başka bir kullanıcı adı seçin.")
+                    else:
+                        st.warning("Lütfen (*) ile işaretli tüm zorunlu alanları doldurun.")
 
 # --- ANA PANEL ---
 else:
@@ -269,7 +333,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
         st.subheader("🗺️ Tarlanın Coğrafi Konumu", divider="green")
         tarla_df = pd.DataFrame({'lat': [t_enlem], 'lon': [t_boylam]})
         st.map(tarla_df, size=14, zoom=11)
-        st.caption(f"📍 Enlem: {t_enlem} | Boylam: {t_boylam} (API Lokasyonu)")
+        st.caption(f"📍 Enlem: {t_enlem} | Boylam: {t_boylam} (Harita Lokasyonu)")
 
     with col_box3:
         st.subheader("📊 Verimlilik & Tasarruf Raporu", divider="orange")
