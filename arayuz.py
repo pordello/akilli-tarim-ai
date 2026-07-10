@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (ORTALANMIŞ GİRİŞ VE YENİ KAYIT SİSTEMİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (OTOMATİK LOKASYON / GEOCODING EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -12,6 +12,24 @@ from datetime import datetime
 
 st.set_page_config(page_title="AI Akıllı Tarım Paneli", page_icon="🌾", layout="wide")
 
+# --- YENİ: ADRESTEN GERÇEK KOORDİNAT BULMA API'Sİ (Geocoding) ---
+def koordinat_bul(il, ilce):
+    """Kullanıcının girdiği il/ilçe bilgisini harita koordinatlarına (enlem, boylam) çevirir."""
+    try:
+        adres = f"{ilce}, {il}, Turkey"
+        url = f"https://nominatim.openstreetmap.org/search?q={adres}&format=json&limit=1"
+        # API'nin engellememesi için tarayıcı kimliği gönderiyoruz
+        headers = {'User-Agent': 'AkilliTarimProjesi/1.0'} 
+        cevap = requests.get(url, headers=headers, timeout=5)
+        veri = cevap.json()
+        
+        if len(veri) > 0:
+            return float(veri[0]['lat']), float(veri[0]['lon'])
+        else:
+            return 39.0, 35.0 # Bulunamazsa Türkiye Merkezi
+    except:
+        return 39.0, 35.0 # İnternet hatasında Türkiye Merkezi
+
 # --- GERÇEK ZAMANLI HAVA DURUMU API FONKSİYONU ---
 def gercek_hava_durumu_getir(enlem, boylam):
     try:
@@ -22,7 +40,7 @@ def gercek_hava_durumu_getir(enlem, boylam):
     except:
         return None 
 
-# --- YENİ: ZAMAN BAZLI AKILLI NEM SİMÜLASYONU ---
+# --- ZAMAN BAZLI AKILLI NEM SİMÜLASYONU ---
 def akilli_nem_simulasyonu():
     su_anki_saat = datetime.now().hour
     if 6 <= su_anki_saat < 12:
@@ -90,14 +108,15 @@ def sql_calisan_ekle(k_adi, sifre, t_adi, enlem, boylam, email, urun, rol, ada, 
     except:
         return False
 
-# YENİ: DIŞARIDAN MÜŞTERİ KAYIT FONKSİYONU
+# DIŞARIDAN MÜŞTERİ KAYIT FONKSİYONU (KOORDİNAT BULUCU ENTEGRE EDİLDİ)
 def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel):
     try:
         baglanti = sqlite3.connect("akilli_tarim.db")
         kursor = baglanti.cursor()
         tam_tarla_adi = f"{tarla} ({il.capitalize()} / {ilce.capitalize()})"
-        # Varsayılan Türkiye koordinatları (İleride API ile adresten çekilebilir)
-        v_enlem, v_boylam = 39.0, 35.0 
+        
+        # Kullanıcının girdiği il/ilçeyi anında koordinata çeviriyoruz
+        v_enlem, v_boylam = koordinat_bul(il, ilce)
         
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        (k_adi, sifre, tam_tarla_adi, v_enlem, v_boylam, email, urun, "Müşteri/Çiftçi", ada, parsel))
@@ -105,7 +124,7 @@ def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, pars
         baglanti.close()
         return True
     except sqlite3.IntegrityError:
-        return False # Kullanıcı adı zaten varsa hata döner
+        return False 
 
 def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -141,7 +160,6 @@ if "giris_yapildi" not in st.session_state:
 
 # --- GİRİŞ VE YENİ KAYIT EKRANI ---
 if not st.session_state["giris_yapildi"]:
-    # Sayfayı ortalamak için 3 sütuna bölüyoruz
     bosluk_sol, icerik_orta, bosluk_sag = st.columns([1.5, 2.5, 1.5])
     
     with icerik_orta:
@@ -151,7 +169,6 @@ if not st.session_state["giris_yapildi"]:
         
         sekme_giris, sekme_kayit = st.tabs(["🔑 Sisteme Giriş", "📝 Yeni Kayıt Ol"])
         
-        # 1. SEKME: GİRİŞ YAP
         with sekme_giris:
             st.write("")
             kullanici_adi = st.text_input("Kullanıcı Adı:", key="login_kadi")
@@ -166,13 +183,12 @@ if not st.session_state["giris_yapildi"]:
                 else:
                     st.error("Hatalı Kullanıcı Adı veya Şifre!")
                     
-        # 2. SEKME: YENİ KAYIT
         with sekme_kayit:
             with st.form("yeni_kayit_formu"):
                 st.subheader("Yeni Tarla / Çiftçi Kaydı")
                 st.caption("Lütfen hesap ve lokasyon bilgilerinizi eksiksiz doldurun.")
                 
-                k_adi = st.text_input("Belirleyeceğiniz Kullanıcı Adı (*)")
+                k_adi = st.text_input("Kullanıcı Adı (*)")
                 k_sifre = st.text_input("Şifre (*)", type="password")
                 k_email = st.text_input("E-Posta Adresi (*)")
                 
@@ -180,22 +196,25 @@ if not st.session_state["giris_yapildi"]:
                 st.write("**📍 Lokasyon ve Parsel Bilgileri**")
                 col_k1, col_k2 = st.columns(2)
                 with col_k1:
-                    k_il = st.text_input("İl (*)")
+                    k_il = st.text_input("İl (*) - Örn: Antalya")
                     k_ada = st.text_input("Ada No (*)")
                 with col_k2:
-                    k_ilce = st.text_input("İlçe (*)")
+                    k_ilce = st.text_input("İlçe (*) - Örn: Alanya")
                     k_parsel = st.text_input("Parsel No (*)")
                     
                 k_tarla = st.text_input("Tarlanıza Vermek İstediğiniz İsim (Örn: Kuzey Yamacı)")
                 k_urun = st.selectbox("Yetiştirilen Ana Mahsul", ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"])
                 
+                # Butona basıldığında yükleme animasyonu çıkacak
                 kayit_buton = st.form_submit_button("✅ Hesabı Oluştur", use_container_width=True)
                 
                 if kayit_buton:
                     if k_adi and k_sifre and k_email and k_il and k_ilce and k_ada and k_parsel:
-                        sonuc = sql_yeni_musteri_kayit(k_adi, k_sifre, k_tarla, k_il, k_ilce, k_email, k_urun, k_ada, k_parsel)
+                        with st.spinner("🗺️ Harita koordinatları bulunuyor ve kayıt yapılıyor..."):
+                            sonuc = sql_yeni_musteri_kayit(k_adi, k_sifre, k_tarla, k_il, k_ilce, k_email, k_urun, k_ada, k_parsel)
+                        
                         if sonuc:
-                            st.success("🎉 Kayıt başarıyla tamamlandı! Yukarıdaki 'Sisteme Giriş' sekmesinden hemen giriş yapabilirsiniz.")
+                            st.success("🎉 Kayıt başarıyla tamamlandı! Sisteme Giriş sekmesinden hemen giriş yapabilirsiniz.")
                         else:
                             st.error("⚠️ Bu kullanıcı adı zaten sistemde kayıtlı! Lütfen başka bir kullanıcı adı seçin.")
                     else:
@@ -236,7 +255,6 @@ else:
         else:
             st.info("Personel yetkilendirme alanı yalnızca Admin rolüne açıktır.")
 
-    # --- SENSÖR VERİLERİ ---
     if "toprak_nemi" not in st.session_state:
         st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
         gercek_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
