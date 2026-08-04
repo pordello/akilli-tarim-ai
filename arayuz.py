@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (GÖREV GÜNCELLEME VE SİLME EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (FİNANSAL ANALİZ & MALİYET EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -87,7 +87,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem):
 
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU ---
+# --- VERİTABANI KURULUMU VE GÜNCELLEMESİ ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -110,6 +110,14 @@ def veritabani_otomatik_kur():
         sicaklik INTEGER NOT NULL, karar TEXT NOT NULL, tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    
+    # YENİ: Eski veritabanına zarar vermeden Maliyet sütununu ekleme denemesi
+    try:
+        kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0")
+        baglanti.commit()
+    except:
+        pass # Sütun zaten varsa hata verme, devam et
+        
     try:
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12"))
@@ -155,18 +163,19 @@ def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, pars
     except sqlite3.IntegrityError:
         return False 
 
-def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar):
+# YENİ: Maliyet parametresi eklendi
+def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar, maliyet):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    kursor.execute("INSERT INTO tarim_takvimi (kullanici_adi, islem_turu, tarih, notlar) VALUES (?, ?, ?, ?)", (k_adi, islem, tarih, notlar))
+    kursor.execute("INSERT INTO tarim_takvimi (kullanici_adi, islem_turu, tarih, notlar, maliyet) VALUES (?, ?, ?, ?, ?)", (k_adi, islem, tarih, notlar, maliyet))
     baglanti.commit()
     baglanti.close()
 
-# YENİ: Görev Güncelleme ve Silme Fonksiyonları
-def sql_takvim_etkinlik_guncelle(gorev_id, yeni_tarih, yeni_not):
+# YENİ: Güncelleme fonksiyonuna maliyet eklendi
+def sql_takvim_etkinlik_guncelle(gorev_id, yeni_tarih, yeni_not, yeni_maliyet):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    kursor.execute("UPDATE tarim_takvimi SET tarih = ?, notlar = ? WHERE id = ?", (yeni_tarih, yeni_not, gorev_id))
+    kursor.execute("UPDATE tarim_takvimi SET tarih = ?, notlar = ?, maliyet = ? WHERE id = ?", (yeni_tarih, yeni_not, yeni_maliyet, gorev_id))
     baglanti.commit()
     baglanti.close()
 
@@ -179,8 +188,8 @@ def sql_takvim_etkinlik_sil(gorev_id):
 
 def sql_takvim_verileri_getir_ham(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    # İşlemler için arka planda ID'yi de çekiyoruz
-    df = pd.read_sql_query("SELECT id, islem_turu, tarih, notlar FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
+    # Maliyet sütununu da çekiyoruz
+    df = pd.read_sql_query("SELECT id, islem_turu, tarih, notlar, maliyet FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
     baglanti.close()
     return df
 
@@ -441,6 +450,26 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 use_container_width=True
             )
 
+    # --- YENİ EKLENEN BÖLÜM: FİNANSAL ANALİZ PANOSU ---
+    st.markdown("---")
+    st.subheader("💰 Finansal Analiz & Sezonluk Bütçe Raporu", divider="red")
+    
+    df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici)
+    toplam_gider = 0.0
+    
+    if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns:
+        toplam_gider = df_takvim_ham['maliyet'].sum()
+        
+    # Basit bir tahmini gelir algoritması (Ürün türüne göre baz getiri çarpanı)
+    baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000}
+    tahmini_gelir = baz_getiri.get(urun_turu, 100000)
+    beklenen_kar = tahmini_gelir - toplam_gider
+
+    col_fin1, col_fin2, col_fin3 = st.columns(3)
+    col_fin1.metric(label="Toplam Operasyonel Gider (TL)", value=f"₺ {toplam_gider:,.2f}")
+    col_fin2.metric(label=f"Tahmini Hasat Geliri ({urun_turu})", value=f"₺ {tahmini_gelir:,.2f}")
+    col_fin3.metric(label="Beklenen Net Kâr (TL)", value=f"₺ {beklenen_kar:,.2f}", delta=f"{'Kârlı' if beklenen_kar > 0 else 'Zarar Riski'}")
+
     # --- CANLI TARIM AJANDASI VE GÜNCELLEME ALANI ---
     st.markdown("---")
     st.subheader("📅 Dijital Tarım Ajandası & Görev Takibi", divider="gray")
@@ -450,56 +479,60 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
     with col_ajanda1:
         with st.form("yeni_gorev_formu"):
             st.write("**Yeni Faaliyet Planla**")
-            yeni_islem = st.selectbox("İşlem Türü:", ["Gübreleme", "İlaçlama", "Hasat", "Toprak Analizi", "Budama", "Sulama (Manuel)", "Diğer"])
+            yeni_islem = st.selectbox("İşlem Türü:", ["Gübreleme", "İlaçlama", "Hasat", "Toprak Analizi", "Budama", "Sulama (Manuel)", "İşçi Maliyeti", "Diğer"])
             yeni_tarih = st.date_input("Planlanan Tarih:")
+            yeni_maliyet = st.number_input("Tahmini Maliyet / Gider (TL):", min_value=0.0, step=100.0)
             yeni_not = st.text_input("Durum / Notlar:", value="Planlandı")
             
             if st.form_submit_button("🗓️ Takvime İşle", use_container_width=True):
-                sql_takvim_etkinlik_ekle(kullanici, yeni_islem, str(yeni_tarih), yeni_not)
+                sql_takvim_etkinlik_ekle(kullanici, yeni_islem, str(yeni_tarih), yeni_not, float(yeni_maliyet))
                 st.success("Faaliyet başarıyla kaydedildi!")
                 st.rerun()
                 
     with col_ajanda2:
         st.write("**Planlanan ve Geçmiş Görevleriniz**")
-        df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici)
         
         if not df_takvim_ham.empty:
-            # Ekranda şık görünmesi için ID sütununu gizleyip isimleri düzeltiyoruz
-            df_gosterim = df_takvim_ham.rename(columns={"islem_turu": "Faaliyet Türü", "tarih": "Planlanan Tarih", "notlar": "Durum / Notlar"})
-            st.dataframe(df_gosterim[["Faaliyet Türü", "Planlanan Tarih", "Durum / Notlar"]], use_container_width=True, hide_index=True)
+            df_gosterim = df_takvim_ham.copy()
+            if 'maliyet' not in df_gosterim.columns:
+                df_gosterim['maliyet'] = 0.0
+            
+            df_gosterim = df_gosterim.rename(columns={"islem_turu": "Faaliyet Türü", "tarih": "Planlanan Tarih", "notlar": "Durum / Notlar", "maliyet": "Maliyet (TL)"})
+            st.dataframe(df_gosterim[["Faaliyet Türü", "Planlanan Tarih", "Maliyet (TL)", "Durum / Notlar"]], use_container_width=True, hide_index=True)
             
             st.write("---")
             st.write("**✏️ Mevcut Bir Görevi Güncelle veya Sil**")
             
-            # Güncellenecek görevi seçmek için açılır menü
             gorev_secenekleri = df_takvim_ham.apply(lambda row: f"ID:{row['id']} | {row['islem_turu']} ({row['tarih']})", axis=1).tolist()
             secilen_gorev_metin = st.selectbox("Düzenlemek istediğiniz görevi seçin:", gorev_secenekleri)
             
             if secilen_gorev_metin:
-                # Seçilen görevin ID'sini metin içinden ayıklıyoruz
                 secilen_id = int(secilen_gorev_metin.split("|")[0].replace("ID:", "").strip())
                 secilen_satir = df_takvim_ham[df_takvim_ham['id'] == secilen_id].iloc[0]
                 
-                c1, c2, c3 = st.columns([1, 1, 1.5])
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 1.5])
                 with c1:
                     mevcut_tarih_str = secilen_satir['tarih']
                     try:
                         mevcut_tarih = datetime.strptime(mevcut_tarih_str, "%Y-%m-%d").date()
                     except:
                         mevcut_tarih = datetime.now().date()
-                    
                     yeni_guncel_tarih = st.date_input("Yeni Tarih:", value=mevcut_tarih, key=f"date_{secilen_id}")
                 
                 with c2:
+                    eski_maliyet = float(secilen_satir['maliyet']) if 'maliyet' in secilen_satir else 0.0
+                    yeni_guncel_maliyet = st.number_input("Maliyet (TL):", value=eski_maliyet, key=f"mal_{secilen_id}", step=100.0)
+
+                with c3:
                     yeni_guncel_not = st.text_input("Yeni Not / Durum:", value=secilen_satir['notlar'], key=f"not_{secilen_id}")
                     
-                with c3:
+                with c4:
                     st.write(" ")
                     st.write(" ")
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         if st.button("🔄 Güncelle", key=f"btn_guncelle_{secilen_id}", use_container_width=True):
-                            sql_takvim_etkinlik_guncelle(secilen_id, str(yeni_guncel_tarih), yeni_guncel_not)
+                            sql_takvim_etkinlik_guncelle(secilen_id, str(yeni_guncel_tarih), yeni_guncel_not, float(yeni_guncel_maliyet))
                             st.success("Görev başarıyla güncellendi!")
                             st.rerun()
                     with col_btn2:
