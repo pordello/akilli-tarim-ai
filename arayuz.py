@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (GLOBAL ÇOKLU DİL SAAS SÜRÜMÜ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM: DİL DESTEĞİ + TÜM MODÜLLER)
 # ==============================================================================
 
 import streamlit as st
@@ -38,7 +38,12 @@ dil_sozlugu = {
         "ai_uyari": "💧 UYARI: Nem düşük, standart sulama açıldı.",
         "ai_normal": "✅ NORMAL: Nem yeterli, sulama kapalı. Su tasarrufu yapılıyor.",
         "veri_isleme": "Veriler veritabanına başarıyla işlendi!",
-        "hastalik_riski": "🦠 AI Hastalık Risk Analizi"
+        "hastalik_riski": "🦠 AI Hastalık Risk Analizi",
+        "personel_yetki": "👥 ADMIN PERSONEL YETKİLENDİRME BÖLGESİ",
+        "raporlama_merkezi": "🖨️ GELİŞMİŞ ÇIKTI VE RAPORLAMA MERKEZİ",
+        "alarm_kritik": "🚨 **KRİTİK ALARM:** Yapay zeka tarlada risk tespit etti! Eylem planı **{email}** adresinize ve cep telefonunuza iletilmiştir.",
+        "alarm_uyari": "⚠️ **SİSTEM UYARISI:** Tarlada dikkat edilmesi gereken durumlar var. Detaylar **{email}** adresinize iletilmiştir.",
+        "alarm_normal": "✅ **BİLDİRİM MERKEZİ:** Her şey yolunda. Sistem günlük olağan raporu **{email}** adresinize gönderdi."
     },
     "EN": {
         "baslik": "🌾 AI Smart Agri Control Center",
@@ -64,17 +69,23 @@ dil_sozlugu = {
         "ai_uyari": "💧 WARNING: Low moisture, standard irrigation active.",
         "ai_normal": "✅ NORMAL: Moisture sufficient, irrigation off. Saving water.",
         "veri_isleme": "Data successfully logged to database!",
-        "hastalik_riski": "🦠 AI Disease Risk Analysis"
+        "hastalik_riski": "🦠 AI Disease Risk Analysis",
+        "personel_yetki": "👥 ADMIN PERSONNEL AUTHORIZATION AREA",
+        "raporlama_merkezi": "🖨️ ADVANCED REPORTING & EXPORT CENTER",
+        "alarm_kritik": "🚨 **CRITICAL ALARM:** AI detected field risks! Action plan sent to **{email}** and your mobile device.",
+        "alarm_uyari": "⚠️ **SYSTEM WARNING:** There are field conditions requiring attention. Details sent to **{email}**.",
+        "alarm_normal": "✅ **NOTIFICATION CENTER:** Everything is optimal. Daily report sent to **{email}**."
     }
 }
 
-# Sidebar üzerinden dil seçimi
 st.sidebar.title("🌍 Language / Dil")
 secilen_dil = st.sidebar.radio("Select Interface Language:", ["TR", "EN"])
 
-def _t(anahtar):
-    """Seçili dile göre sözlükten kelimeyi getirir, bulamazsa anahtarı döndürür."""
-    return dil_sozlugu[secilen_dil].get(anahtar, anahtar)
+def _t(anahtar, **kwargs):
+    metin = dil_sozlugu[secilen_dil].get(anahtar, anahtar)
+    if kwargs:
+        return metin.format(**kwargs)
+    return metin
 
 # --- ADRESTEN GERÇEK KOORDİNAT BULMA API'Sİ (Geocoding) ---
 def koordinat_bul(il, ilce):
@@ -119,7 +130,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
     hastalik_adi = "Mantar ve Bakteri Riski" if dil == "TR" else "Fungal and Bacterial Risk"
     detay_mesaj = "Hava şartları mahsul sağlığı için elverişli görünüyor." if dil == "TR" else "Weather conditions look favorable for crop health."
 
-    if urun == "Pamuk":
+    if urun == "Pamuk" or urun == "Cotton":
         hastalik_adi = "Pamukta Solgunluk & Kırmızı Örümcek" if dil == "TR" else "Cotton Wilt & Spider Mites"
         if sicaklik > 32 and nem < 30:
             risk_skoru = 85
@@ -128,7 +139,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
             risk_skoru = 60
             detay_mesaj = "⚠️ Nemli ve sıcak hava Solgunluk mantarını tetikleyebilir." if dil == "TR" else "⚠️ Humid and warm weather can trigger Wilt fungus."
             
-    elif urun == "Zeytin":
+    elif urun == "Zeytin" or urun == "Olive":
         hastalik_adi = "Zeytin Halkalı Leke Hastalığı" if dil == "TR" else "Olive Peacock Spot Disease"
         if 15 <= sicaklik <= 22 and nem > 70:
             risk_skoru = 90
@@ -136,6 +147,18 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
         elif sicaklik > 28:
             risk_skoru = 20
             detay_mesaj = "✅ Yüksek sıcaklık faaliyetleri yavaşlatıyor." if dil == "TR" else "✅ High temperatures slow down disease activities."
+
+    elif urun == "Buğday" or urun == "Wheat":
+        hastalik_adi = "Buğdayda Pas Hastalığı (Küf)" if dil == "TR" else "Wheat Rust Disease (Mold)"
+        if 10 <= sicaklik <= 20 and nem > 65:
+            risk_skoru = 75
+            detay_mesaj = "⚠️ Serin ve nemli hava pas hastalığı için ideal ortam oluşturuyor." if dil == "TR" else "⚠️ Cool and humid weather creates ideal conditions for rust."
+            
+    else: 
+        hastalik_adi = "Kök Çürüklüğü & Mantar" if dil == "TR" else "Root Rot & Fungus"
+        if nem > 75:
+            risk_skoru = 80
+            detay_mesaj = "🚨 Aşırı toprak nemi köklerin nefes almasını engelliyor!" if dil == "TR" else "🚨 Excessive soil moisture prevents roots from breathing!"
 
     return hastalik_adi, risk_skoru, detay_mesaj
 
@@ -162,13 +185,11 @@ def veritabani_otomatik_kur():
         sicaklik INTEGER NOT NULL, karar TEXT NOT NULL, tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-    
     try:
         kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0")
         baglanti.commit()
     except:
         pass 
-        
     try:
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12"))
@@ -351,6 +372,7 @@ else:
     toprak_nemi = st.session_state["toprak_nemi"]
     canli_sicaklik = st.session_state["canli_sicaklik"]
 
+    # AI Kararları ve Finansal Ön Hesaplamalar
     if toprak_nemi < 30 and canli_sicaklik > 30:
         ai_mesaj = _t("ai_kuru")
         ai_durum = "error"
@@ -372,10 +394,11 @@ else:
     if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns:
         toplam_gider = df_takvim_ham['maliyet'].sum()
         
-    baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000}
+    baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000, "Cotton": 150000, "Olive": 200000, "Wheat": 80000, "Corn": 120000, "Sunflower": 95000, "Citrus": 180000, "Tomato": 110000}
     tahmini_gelir = baz_getiri.get(urun_turu, 100000)
     beklenen_kar = tahmini_gelir - toplam_gider
 
+    # BAŞLIK
     col_header_text, col_header_logout_btn = st.columns([8.5, 1.5])
     with col_header_text:
         st.subheader(f"{_t('baslik')} | {tarla_adi.upper()}")
@@ -389,35 +412,113 @@ else:
 
     st.markdown(" ")
 
+    # EKSİK 1: AKILLI BİLDİRİM VE ALARM MERKEZİ (GERİ EKLENDİ)
+    if ai_durum == "error" or h_skor >= 75:
+        st.error(_t("alarm_kritik", email=m_email))
+        if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
+            st.toast("📲 SMS İLETİLDİ / SMS SENT!" if secilen_dil == "TR" else "📲 SMS SENT!", icon="🚨")
+            st.session_state["alarm_gosterildi"] = True
+    elif ai_durum == "warning" or h_skor >= 40:
+        st.warning(_t("alarm_uyari", email=m_email))
+        if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
+            st.toast("📧 E-Posta İLETİLDİ / Email SENT" if secilen_dil == "TR" else "📧 EMAIL SENT", icon="⚠️")
+            st.session_state["alarm_gosterildi"] = True
+    else:
+        st.info(_t("alarm_normal", email=m_email))
+        st.session_state["alarm_gosterildi"] = False
+
+    st.markdown("---")
+
     col_top_left, col_top_right = st.columns(2) 
+    
+    # EKSİK 2: ADMIN PERSONEL YETKİLENDİRME (GERİ EKLENDİ)
+    with col_top_left:
+        if str(rol).strip().lower() == "admin":
+            with st.expander(_t("personel_yetki"), expanded=False):
+                p_kadi = st.text_input("Personel Kullanıcı Adı / Username:", key="pk_admin")
+                p_sifre = st.text_input("Personel Giriş Şifresi / Password:", type="password", key="ps_admin")
+                roller = ["Ziraat Mühendisi", "Saha Personeli", "Traktör Operatörü"] if secilen_dil == "TR" else ["Agricultural Engineer", "Field Staff", "Tractor Operator"]
+                p_rol = st.selectbox("Atanacak Unvan / Role:", roller, key="prole_admin")
+                
+                btn_kayit = "🚀 Personel Atamasını Onayla" if secilen_dil == "TR" else "🚀 Confirm Personnel Assignment"
+                if st.button(btn_kayit, use_container_width=True):
+                    if p_kadi and p_sifre:
+                        sql_calisan_ekle(p_kadi, p_sifre, tarla_adi, t_enlem, t_boylam, "kurumsal@tarim.com", urun_turu, p_rol, ada, parsel)
+                        st.success(f"🎉 {p_kadi} isimli personel atandı." if secilen_dil == "TR" else f"🎉 {p_kadi} assigned successfully.")
+                    else:
+                        st.warning("Lütfen alanları doldurun." if secilen_dil == "TR" else "Please fill the fields.")
+        else:
+            st.info("Personel yetkilendirme alanı yalnızca Admin rolüne açıktır." if secilen_dil == "TR" else "Personnel authorization is restricted to Admin role.")
+
+    # EKSİK 3: GELİŞMİŞ KURUMSAL HTML/PDF RAPORU (GERİ EKLENDİ)
     with col_top_right:
-        with st.expander("🖨️ " + ("GELİŞMİŞ ÇIKTI VE RAPORLAMA MERKEZİ" if secilen_dil == "TR" else "ADVANCED REPORTING CENTER"), expanded=False):
+        with st.expander(_t("raporlama_merkezi"), expanded=False):
+            if secilen_dil == "TR":
+                st.caption("Yapay zeka analiz raporunuzu kurumsal formatta PDF olarak yazdırılmak üzere indirebilirsiniz.")
+            else:
+                st.caption("Download your AI analysis report in corporate HTML format ready for PDF printing.")
+            
             html_rapor = f"""
             <!DOCTYPE html>
             <html>
             <head>
             <meta charset="UTF-8">
+            <title>Akıllı Tarım Raporu</title>
             <style>
-                body {{ font-family: sans-serif; padding: 40px; color: #2c3e50; }}
-                .header {{ text-align: center; border-bottom: 3px solid #2ecc71; padding-bottom: 20px; }}
-                .info-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; }}
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #2c3e50; background-color: #ffffff; }}
+                .header {{ text-align: center; border-bottom: 3px solid #2ecc71; padding-bottom: 20px; margin-bottom: 30px; }}
+                .header h1 {{ color: #27ae60; margin: 0; font-size: 28px; }}
+                .header p {{ color: #7f8c8d; font-size: 14px; margin-top: 5px; }}
+                .info-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
                 .info-table th, .info-table td {{ border: 1px solid #e0e0e0; padding: 12px; text-align: left; }}
-                .info-table th {{ background-color: #f8f9fa; width: 35%; }}
-                .box {{ padding: 15px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; background-color: #eaeded; }}
+                .info-table th {{ background-color: #f8f9fa; width: 35%; font-weight: 600; color: #34495e; }}
+                .section-title {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; margin-top: 30px; font-size: 18px; }}
+                .box {{ padding: 15px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; }}
+                .box-success {{ background-color: #eaeded; color: #27ae60; border-left: 5px solid #27ae60; }}
+                .box-warning {{ background-color: #fef9e7; color: #d35400; border-left: 5px solid #f39c12; }}
+                .box-danger {{ background-color: #fdedec; color: #c0392b; border-left: 5px solid #e74c3c; }}
             </style>
             </head>
             <body>
                 <div class="header">
-                    <h2>AI Smart Agri Platform Report</h2>
-                    <p>Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                    <h1>🌾 AI Smart Agri Platform</h1>
+                    <h2 style="color:#2c3e50; margin-top: 10px;">Official Field and Finance Report</h2>
+                    <p>Date / Tarih: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
                 </div>
+
+                <h3 class="section-title">📍 Müşteri ve Tesis Bilgileri / Client Info</h3>
                 <table class="info-table">
-                    <tr><th>User / Mülk Sahibi</th><td>{kullanici.upper()}</td></tr>
-                    <tr><th>Field / Tesis Adı</th><td>{tarla_adi.upper()}</td></tr>
-                    <tr><th>Crop / Mahsul</th><td>{urun_turu}</td></tr>
-                    <tr><th>Temp / Sıcaklık</th><td>{canli_sicaklik} °C</td></tr>
-                    <tr><th>Moisture / Nem</th><td>%{toprak_nemi}</td></tr>
+                    <tr><th>Mülk Sahibi / Owner</th><td>{kullanici.upper()}</td></tr>
+                    <tr><th>Tesis Adı / Facility</th><td>{tarla_adi.upper()}</td></tr>
+                    <tr><th>Ada & Parsel / Block & Parcel</th><td>{ada} / {parsel}</td></tr>
+                    <tr><th>Yetiştirilen Mahsul / Crop</th><td>{urun_turu}</td></tr>
                 </table>
+
+                <h3 class="section-title">📊 Anlık Çevresel Metrikler / Environmental Metrics</h3>
+                <table class="info-table">
+                    <tr><th>Hava Sıcaklığı / Air Temp</th><td>{canli_sicaklik} °C</td></tr>
+                    <tr><th>Toprak Nemi / Soil Moisture</th><td>%{toprak_nemi}</td></tr>
+                </table>
+
+                <h3 class="section-title">🤖 Yapay Zeka Karar Merkezi / AI Decisions</h3>
+                <div class="box {css_durum}">
+                    💧 Sulama Kararı / Irrigation: {ai_mesaj}
+                </div>
+                <div class="box {h_css}">
+                    🦠 Hastalık Riski / Disease Risk ({h_adi}): %{h_skor} <br><br> Tespit / Note: {h_mesaj}
+                </div>
+
+                <h3 class="section-title">💰 Finansal Analiz / Financial Budget</h3>
+                <table class="info-table">
+                    <tr><th>Toplam Operasyonel Gider / Total Cost</th><td>₺ {toplam_gider:,.2f}</td></tr>
+                    <tr><th>Tahmini Hasat Geliri / Est. Revenue</th><td>₺ {tahmini_gelir:,.2f}</td></tr>
+                    <tr><th>Beklenen Net Kâr / Net Profit</th><td>₺ {beklenen_kar:,.2f}</td></tr>
+                </table>
+                
+                <p style="text-align: center; color: #95a5a6; font-size: 11px; margin-top: 50px;">
+                    Bu belge AI Akıllı Tarım Platformu algoritmaları tarafından otomatik üretilmiştir.<br>
+                    Generated automatically by AI Smart Agri Platform algorithms.
+                </p>
             </body>
             </html>
             """
@@ -430,6 +531,19 @@ else:
             )
 
     st.markdown("---")
+
+    col_yenile, _ = st.columns([2, 8])
+    with col_yenile:
+        btn_yenile = "🔄 Sensörleri Oku (Canlı API Veri Al)" if secilen_dil == "TR" else "🔄 Read Sensors (Live API)"
+        if st.button(btn_yenile, use_container_width=True):
+            guncel_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
+            if guncel_isi is not None:
+                st.session_state["canli_sicaklik"] = guncel_isi
+            else:
+                st.session_state["canli_sicaklik"] = random.randint(22, 38)
+            st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
+            st.session_state["alarm_gosterildi"] = False 
+            st.rerun()
 
     df_kayitlar = sql_analizleri_getir(kullanici)
     if not df_kayitlar.empty:
@@ -518,16 +632,18 @@ else:
     with col_ajanda1:
         with st.form("yeni_gorev_formu"):
             st.write("**Yeni Faaliyet / New Task**")
-            yeni_islem = st.selectbox("İşlem Türü / Task Type:", ["Gübreleme / Fertilizing", "İlaçlama / Spraying", "Hasat / Harvest", "Sulama / Irrigation", "Diğer / Other"])
+            yeni_islem = st.selectbox("İşlem Türü / Task Type:", ["Gübreleme / Fertilizing", "İlaçlama / Spraying", "Hasat / Harvest", "Sulama / Irrigation", "İşçi Maliyeti / Labor Cost", "Diğer / Other"])
             yeni_tarih = st.date_input("Tarih / Date:")
             yeni_maliyet = st.number_input("Tahmini Maliyet / Est. Cost:", min_value=0.0, step=100.0)
             yeni_not = st.text_input("Durum / Note:", value="Planlandı / Planned")
             
-            if st.form_submit_button("🗓️ Takvime İşle / Save Task", use_container_width=True):
+            btn_takvim = "🗓️ Takvime İşle" if secilen_dil == "TR" else "🗓️ Save Task"
+            if st.form_submit_button(btn_takvim, use_container_width=True):
                 sql_takvim_etkinlik_ekle(kullanici, yeni_islem, str(yeni_tarih), yeni_not, float(yeni_maliyet))
                 st.rerun()
                 
     with col_ajanda2:
+        # EKSİK 4: GÖREV GÜNCELLEME VE SİLME PANELİ (GERİ EKLENDİ)
         if not df_takvim_ham.empty:
             df_gosterim = df_takvim_ham.copy()
             if 'maliyet' not in df_gosterim.columns:
@@ -536,11 +652,43 @@ else:
             df_gosterim = df_gosterim.rename(columns={"islem_turu": "Faaliyet / Task", "tarih": "Tarih / Date", "notlar": "Durum / Status", "maliyet": "Maliyet / Cost"})
             st.dataframe(df_gosterim[["Faaliyet / Task", "Tarih / Date", "Maliyet / Cost", "Durum / Status"]], use_container_width=True, hide_index=True)
             
+            st.write("---")
+            st.write("**✏️ Mevcut Bir Görevi Güncelle veya Sil / Edit or Delete Task**")
+            
             gorev_secenekleri = df_takvim_ham.apply(lambda row: f"ID:{row['id']} | {row['islem_turu']} ({row['tarih']})", axis=1).tolist()
             secilen_gorev_metin = st.selectbox("Görev Seç / Select Task to Edit:", gorev_secenekleri)
             
             if secilen_gorev_metin:
                 secilen_id = int(secilen_gorev_metin.split("|")[0].replace("ID:", "").strip())
-                if st.button("🗑️ Görevi Sil / Delete Task", key=f"btn_sil_{secilen_id}", use_container_width=True):
-                    sql_takvim_etkinlik_sil(secilen_id)
-                    st.rerun()
+                secilen_satir = df_takvim_ham[df_takvim_ham['id'] == secilen_id].iloc[0]
+                
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 1.5])
+                with c1:
+                    mevcut_tarih_str = secilen_satir['tarih']
+                    try:
+                        mevcut_tarih = datetime.strptime(mevcut_tarih_str, "%Y-%m-%d").date()
+                    except:
+                        mevcut_tarih = datetime.now().date()
+                    yeni_guncel_tarih = st.date_input("Tarih / Date:", value=mevcut_tarih, key=f"date_{secilen_id}")
+                
+                with c2:
+                    eski_maliyet = float(secilen_satir['maliyet']) if 'maliyet' in secilen_satir else 0.0
+                    yeni_guncel_maliyet = st.number_input("Maliyet / Cost:", value=eski_maliyet, key=f"mal_{secilen_id}", step=100.0)
+
+                with c3:
+                    yeni_guncel_not = st.text_input("Durum / Note:", value=secilen_satir['notlar'], key=f"not_{secilen_id}")
+                    
+                with c4:
+                    st.write(" ")
+                    st.write(" ")
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        btn_guncelle = "🔄 Güncelle" if secilen_dil == "TR" else "🔄 Update"
+                        if st.button(btn_guncelle, key=f"btn_guncelle_{secilen_id}", use_container_width=True):
+                            sql_takvim_etkinlik_guncelle(secilen_id, str(yeni_guncel_tarih), yeni_guncel_not, float(yeni_guncel_maliyet))
+                            st.rerun()
+                    with col_btn2:
+                        btn_sil = "🗑️ Sil" if secilen_dil == "TR" else "🗑️ Delete"
+                        if st.button(btn_sil, key=f"btn_sil_{secilen_id}", use_container_width=True):
+                            sql_takvim_etkinlik_sil(secilen_id)
+                            st.rerun()
