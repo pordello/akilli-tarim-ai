@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (TARLA GÜNCELLEME VE AYARLAR EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (MANUEL HASAT VE FİYAT GİRİŞİ EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -28,8 +28,8 @@ dil_sozlugu = {
         "nem_gecmisi": "📈 Son Günlüklenen Toprak Nem Geçmişi (%)",
         "finansal_analiz": "💰 Finansal Analiz & Sezonluk Bütçe Raporu",
         "toplam_gider": "Toplam Operasyonel Gider (TL)",
-        "tahmini_gelir": "Tahmini Hasat Geliri",
-        "net_kar": "Beklenen Net Kâr (TL)",
+        "tahmini_gelir": "Gerçekleşen / Beklenen Gelir",
+        "net_kar": "Net Kâr Durumu (TL)",
         "ajanda_baslik": "📅 Dijital Tarım Ajandası & Görev Takibi",
         "rapor_indir": "📄 Kurumsal Web Raporunu İndir (.html)",
         "veri_seti_indir": "📥 Yapay Zeka İçin Veri Setini İndir (.csv)",
@@ -63,8 +63,8 @@ dil_sozlugu = {
         "nem_gecmisi": "📈 Recently Logged Soil Moisture History (%)",
         "finansal_analiz": "💰 Financial Analysis & Seasonal Budget",
         "toplam_gider": "Total Operational Cost (TRY)",
-        "tahmini_gelir": "Est. Harvest Revenue",
-        "net_kar": "Expected Net Profit (TRY)",
+        "tahmini_gelir": "Realized / Expected Revenue",
+        "net_kar": "Net Profit Status (TRY)",
         "ajanda_baslik": "📅 Digital Ag-Agenda & Task Tracking",
         "rapor_indir": "📄 Download Corporate Web Report (.html)",
         "veri_seti_indir": "📥 Download Dataset for AI (.csv)",
@@ -161,7 +161,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
 
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU ---
+# --- VERİTABANI KURULUMU (REKOLTE VE FİYAT EKLENDİ) ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -171,7 +171,7 @@ def veritabani_otomatik_kur():
         id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, sifre TEXT NOT NULL,
         tarla_adi TEXT NOT NULL, enlem REAL NOT NULL, boylam REAL NOT NULL, email TEXT NOT NULL,
         urun_turu TEXT DEFAULT 'Genel', rol TEXT DEFAULT 'SHA', ada TEXT DEFAULT '-', parsel TEXT DEFAULT '-',
-        alan_m2 REAL DEFAULT 0.0
+        alan_m2 REAL DEFAULT 0.0, rekolte_kg REAL DEFAULT 0.0, birim_fiyat REAL DEFAULT 0.0
     )
     """)
     kursor.execute("""
@@ -187,7 +187,12 @@ def veritabani_otomatik_kur():
     )
     """)
     
+    # Yeni sütunları mevcut veritabanına sorunsuz ekleme
     try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN alan_m2 REAL DEFAULT 0.0"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN rekolte_kg REAL DEFAULT 0.0"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN birim_fiyat REAL DEFAULT 0.0"); baglanti.commit()
     except: pass
     try: kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'"); baglanti.commit()
     except: pass
@@ -198,8 +203,8 @@ def veritabani_otomatik_kur():
         
     kursor.execute("SELECT COUNT(*) FROM kullanicilar WHERE kullanici_adi = 'yunus'")
     if kursor.fetchone()[0] == 0:
-        kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                       ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12", 50000.0))
+        kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12", 50000.0, 0.0, 0.0))
         baglanti.commit()
         
     baglanti.close()
@@ -210,7 +215,7 @@ veritabani_otomatik_kur()
 def sql_kullanici_kontrol(kullanici_adi, sifre):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    kursor.execute("SELECT tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2 FROM kullanicilar WHERE kullanici_adi = ? AND sifre = ?", (kullanici_adi, sifre))
+    kursor.execute("SELECT tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat FROM kullanicilar WHERE kullanici_adi = ? AND sifre = ?", (kullanici_adi, sifre))
     sonuc = kursor.fetchone()
     baglanti.close()
     return sonuc
@@ -218,7 +223,7 @@ def sql_kullanici_kontrol(kullanici_adi, sifre):
 def sql_kullanicinin_tarlalarini_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    kursor.execute("SELECT tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2 FROM kullanicilar WHERE kullanici_adi = ?", (k_adi,))
+    kursor.execute("SELECT tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat FROM kullanicilar WHERE kullanici_adi = ?", (k_adi,))
     tarlalar = kursor.fetchall()
     baglanti.close()
     return tarlalar
@@ -229,7 +234,7 @@ def sql_yeni_tarla_ekle(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel,
         kursor = baglanti.cursor()
         tam_tarla_adi = f"{tarla} ({il.capitalize()} / {ilce.capitalize()})"
         v_enlem, v_boylam = koordinat_bul(il, ilce)
-        kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0.0)",
                        (k_adi, sifre, tam_tarla_adi, v_enlem, v_boylam, email, urun, "Müşteri/Çiftçi", ada, parsel, alan_m2))
         baglanti.commit()
         baglanti.close()
@@ -237,19 +242,16 @@ def sql_yeni_tarla_ekle(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel,
     except:
         return False 
 
-# YENİ: TARLA GÜNCELLEME FONKSİYONU
-def sql_tarla_guncelle(k_adi, eski_tarla_adi, yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam):
+def sql_tarla_guncelle(k_adi, eski_tarla_adi, yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam, yeni_rekolte, yeni_fiyat):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
     
-    # Ana tabloyu güncelle
     kursor.execute("""
         UPDATE kullanicilar 
-        SET tarla_adi=?, urun_turu=?, ada=?, parsel=?, alan_m2=?, enlem=?, boylam=? 
+        SET tarla_adi=?, urun_turu=?, ada=?, parsel=?, alan_m2=?, enlem=?, boylam=?, rekolte_kg=?, birim_fiyat=? 
         WHERE kullanici_adi=? AND tarla_adi=?
-    """, (yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam, k_adi, eski_tarla_adi))
+    """, (yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam, yeni_rekolte, yeni_fiyat, k_adi, eski_tarla_adi))
     
-    # İsim değiştiyse geçmiş kayıtların senkronizasyonu
     if eski_tarla_adi != yeni_tarla_adi:
         kursor.execute("UPDATE tarim_takvimi SET tarla_adi=? WHERE kullanici_adi=? AND tarla_adi=?", (yeni_tarla_adi, k_adi, eski_tarla_adi))
         kursor.execute("UPDATE tarla_gunlukleri SET tarla_adi=? WHERE kullanici_adi=? AND tarla_adi=?", (yeni_tarla_adi, k_adi, eski_tarla_adi))
@@ -420,21 +422,20 @@ else:
         tum_takvim = sql_tum_tarlalarin_takvimini_getir(kullanici)
         toplam_sirket_gideri = tum_takvim['Maliyet (TL)'].sum() if not tum_takvim.empty else 0.0
         
-        baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000, "Cotton": 150000, "Olive": 200000, "Wheat": 80000, "Corn": 120000, "Sunflower": 95000, "Citrus": 180000, "Tomato": 110000}
-        
-        toplam_tahmini_gelir = sum(baz_getiri.get(t[4], 100000) for t in tarlalar_listesi)
+        # GERÇEK (MANUEL) TOPLAM GELİR HESABI
+        toplam_tahmini_gelir = sum(t[9] * t[10] for t in tarlalar_listesi) # rekolte_kg * birim_fiyat
         genel_net_kar = toplam_tahmini_gelir - toplam_sirket_gideri
 
         rc1, rc2, rc3, rc4 = st.columns(4)
         rc1.metric(label="Toplam Arazi", value=f"{len(tarlalar_listesi)} Adet")
         rc2.metric(label="Toplam İşletme Gideri", value=f"₺ {toplam_sirket_gideri:,.2f}")
-        rc3.metric(label="Toplam Tahmini Gelir", value=f"₺ {toplam_tahmini_gelir:,.2f}")
-        rc4.metric(label="Genel Beklenen Kâr", value=f"₺ {genel_net_kar:,.2f}", delta="Kârlı" if genel_net_kar > 0 else "Risk")
+        rc3.metric(label="Toplam Gerçekleşen Gelir", value=f"₺ {toplam_tahmini_gelir:,.2f}")
+        rc4.metric(label="Genel Net Kâr", value=f"₺ {genel_net_kar:,.2f}", delta="Kârlı" if genel_net_kar > 0 else "Risk")
 
         st.markdown("---")
         st.subheader("📋 Kayıtlı Tüm Arazilerinizin Listesi")
-        tarlalar_df = pd.DataFrame(tarlalar_listesi, columns=["Tarla Adı", "Enlem", "Boylam", "E-posta", "Mahsul", "Rol", "Ada", "Parsel", "Alan (m²)"])
-        st.dataframe(tarlalar_df[["Tarla Adı", "Mahsul", "Alan (m²)", "Ada", "Parsel"]], use_container_width=True, hide_index=True)
+        tarlalar_df = pd.DataFrame(tarlalar_listesi, columns=["Tarla Adı", "Enlem", "Boylam", "E-posta", "Mahsul", "Rol", "Ada", "Parsel", "Alan (m²)", "Hasat (kg)", "Fiyat (TL)"])
+        st.dataframe(tarlalar_df[["Tarla Adı", "Mahsul", "Alan (m²)", "Hasat (kg)", "Fiyat (TL)"]], use_container_width=True, hide_index=True)
 
         st.markdown("---")
         st.subheader("📈 Tüm Arazilerden Son Sensör Akışı")
@@ -488,17 +489,18 @@ else:
         aktif_tarla_verisi = next((t for t in tarlalar_listesi if t[0] == aktif_secim), None)
         
         if aktif_tarla_verisi:
-            tarla_adi, t_enlem, t_boylam, m_email, urun_turu, rol, ada, parsel, alan_m2 = aktif_tarla_verisi
+            tarla_adi, t_enlem, t_boylam, m_email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat = aktif_tarla_verisi
             
             st.subheader(f"🌾 Arazi Kontrol Merkezi | {tarla_adi.upper()}")
             st.caption(f"Yönetici: {kullanici.upper()} | Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
             
-            # YENİ EKLENEN: TARLA BİLGİLERİNİ GÜNCELLEME ALANI
+            # YENİ EKLENEN: TARLA BİLGİLERİNİ VE FİNANSAL GİRDİLERİ GÜNCELLEME ALANI
             with st.expander(_t("tarla_ayarlari"), expanded=False):
                 with st.form(f"guncelle_form_{tarla_adi}"):
+                    st.write("**Arazi Kimlik Bilgileri**")
                     col_ay1, col_ay2 = st.columns(2)
                     with col_ay1:
-                        g_tarla_adi = st.text_input("Tarla Adı (Tamamı):", value=tarla_adi)
+                        g_tarla_adi = st.text_input("Tarla Adı:", value=tarla_adi)
                         g_alan = st.number_input("Alan (m²):", value=float(alan_m2), min_value=0.0, step=100.0)
                         g_ada = st.text_input("Ada No:", value=ada)
                     with col_ay2:
@@ -506,6 +508,14 @@ else:
                         varsayilan_indeks = urunler.index(urun_turu) if urun_turu in urunler else 0
                         g_urun = st.selectbox("Yetiştirilen Mahsul:", urunler, index=varsayilan_indeks)
                         g_parsel = st.text_input("Parsel No:", value=parsel)
+
+                    st.write("---")
+                    st.write("**💰 Üretim ve Satış Hedefleri (Finansal Veriler)**")
+                    col_fin_g1, col_fin_g2 = st.columns(2)
+                    with col_fin_g1:
+                        g_rekolte = st.number_input("Beklenen/Gerçekleşen Hasat Miktarı (kg) / Harvest (kg):", value=float(rekolte_kg), min_value=0.0, step=50.0)
+                    with col_fin_g2:
+                        g_fiyat = st.number_input("Birim Satış Fiyatı (TL/kg) / Price (TRY/kg):", value=float(birim_fiyat), min_value=0.0, step=1.0)
                         
                     st.write("---")
                     st.caption("Eğer tarlanın harita konumunu (koordinatlarını) değiştirmek istiyorsanız aşağıdaki alanları doldurun. Doldurmazsanız eski konum geçerli kalır.")
@@ -514,12 +524,12 @@ else:
                     with col_il2: g_ilce = st.text_input("Yeni İlçe (İsteğe Bağlı):")
                     
                     if st.form_submit_button(_t("degisiklik_kaydet"), use_container_width=True):
-                        yeni_enlem, yeni_boylam = t_enlem, t_boylam # Varsayılan eski koordinatlar
+                        yeni_enlem, yeni_boylam = t_enlem, t_boylam 
                         if g_il and g_ilce:
                             y_en, y_boy = koordinat_bul(g_il, g_ilce)
                             yeni_enlem, yeni_boylam = y_en, y_boy
                             
-                        sql_tarla_guncelle(kullanici, tarla_adi, g_tarla_adi, g_urun, g_ada, g_parsel, float(g_alan), yeni_enlem, yeni_boylam)
+                        sql_tarla_guncelle(kullanici, tarla_adi, g_tarla_adi, g_urun, g_ada, g_parsel, float(g_alan), yeni_enlem, yeni_boylam, float(g_rekolte), float(g_fiyat))
                         st.success(_t("guncelleme_basarili"))
                         st.rerun()
 
@@ -546,22 +556,14 @@ else:
 
             h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi, secilen_dil)
 
-            # Alarm
             if ai_durum == "error" or h_skor >= 75:
                 st.error(_t("alarm_kritik", email=m_email))
-                if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
-                    st.toast("📲 SMS İLETİLDİ", icon="🚨")
-                    st.session_state["alarm_gosterildi"] = True
             elif ai_durum == "warning" or h_skor >= 40:
                 st.warning(_t("alarm_uyari", email=m_email))
-                if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
-                    st.toast("📧 E-Posta İLETİLDİ", icon="⚠️")
-                    st.session_state["alarm_gosterildi"] = True
             else:
                 st.info(_t("alarm_normal", email=m_email))
-                st.session_state["alarm_gosterildi"] = False
 
-            # HTML Rapor ve Buton
+            # HTML Rapor
             col_rp_bos, col_rp_buton = st.columns([7, 3])
             with col_rp_buton:
                 html_rapor = f"""
@@ -587,8 +589,8 @@ else:
                         <tr><th>Field / Tarla</th><td>{tarla_adi.upper()}</td></tr>
                         <tr><th>Area / Alan</th><td>{alan_m2:,.0f} m²</td></tr>
                         <tr><th>Crop / Mahsul</th><td>{urun_turu}</td></tr>
-                        <tr><th>Temp / Sıcaklık</th><td>{canli_sicaklik} °C</td></tr>
-                        <tr><th>Moisture / Nem</th><td>%{toprak_nemi}</td></tr>
+                        <tr><th>Yield / Rekolte</th><td>{rekolte_kg:,.1f} kg</td></tr>
+                        <tr><th>Price / Fiyat</th><td>{birim_fiyat:,.2f} TL</td></tr>
                     </table>
                 </body>
                 </html>
@@ -597,11 +599,11 @@ else:
 
             st.markdown("---")
             
-            # Finansal
+            # YENİ (MANUEL) FİNANS HESAPLAMASI
             df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici, tarla_adi)
             toplam_gider = df_takvim_ham['maliyet'].sum() if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns else 0.0
-            baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000, "Cotton": 150000, "Olive": 200000, "Wheat": 80000, "Corn": 120000, "Sunflower": 95000, "Citrus": 180000, "Tomato": 110000}
-            tahmini_gelir = baz_getiri.get(urun_turu, 100000)
+            
+            tahmini_gelir = rekolte_kg * birim_fiyat
             beklenen_kar = tahmini_gelir - toplam_gider
 
             col_box1, col_box2, col_box3 = st.columns(3)
@@ -612,13 +614,6 @@ else:
                 st.write(_t("toprak_nemi"))
                 st.subheader(f"%{toprak_nemi}")
                 
-                if ai_durum == "error": st.error(f"{ai_mesaj}")
-                elif ai_durum == "warning": st.warning(f"{ai_mesaj}")
-                else: st.success(f"{ai_mesaj}")
-                    
-                st.write(f"🦠 **{_t('hastalik_riski')} ({h_adi})**")
-                st.progress(h_skor / 100)
-                
                 if st.button(_t("analizi_gunlukle"), key=f"btn_gunluk_{tarla_adi}", use_container_width=True):
                     sql_analiz_kaydet(kullanici, tarla_adi, int(toprak_nemi), float(canli_sicaklik), ai_mesaj)
                     st.rerun()
@@ -626,7 +621,6 @@ else:
             with col_box2:
                 st.subheader(_t("cografi_konum"), divider="green")
                 st.map(pd.DataFrame({'lat': [t_enlem], 'lon': [t_boylam]}), size=14, zoom=11)
-                st.caption(f"📍 Enlem: {t_enlem} | Boylam: {t_boylam} ({tarla_adi})")
 
             with col_box3:
                 df_kayitlar = sql_analizleri_getir(kullanici, tarla_adi)
@@ -644,7 +638,7 @@ else:
             st.subheader(f"💰 {tarla_adi} - Finansal Analiz & Bütçe", divider="red")
             fc1, fc2, fc3 = st.columns(3)
             fc1.metric(label=_t("toplam_gider"), value=f"₺ {toplam_gider:,.2f}")
-            fc2.metric(label=f"{_t('tahmini_gelir')} ({urun_turu})", value=f"₺ {tahmini_gelir:,.2f}")
+            fc2.metric(label=f"{_t('tahmini_gelir')}", value=f"₺ {tahmini_gelir:,.2f}")
             fc3.metric(label=_t("net_kar"), value=f"₺ {beklenen_kar:,.2f}", delta="Kârlı" if beklenen_kar > 0 else "Zarar")
 
             st.markdown("---")
