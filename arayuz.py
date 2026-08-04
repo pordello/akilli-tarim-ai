@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (MANUEL HASAT VE FİYAT GİRİŞİ EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (AYARLAR VE FİNANS MODÜLÜ AYRILDI)
 # ==============================================================================
 
 import streamlit as st
@@ -46,8 +46,9 @@ dil_sozlugu = {
         "alarm_uyari": "⚠️ **SİSTEM UYARISI:** Tarlada dikkat edilmesi gereken durumlar var. Detaylar **{email}** adresine iletildi.",
         "alarm_normal": "✅ **BİLDİRİM MERKEZİ:** Her şey yolunda. Günlük olağan rapor **{email}** adresine gönderildi.",
         "tarla_ayarlari": "⚙️ Tarla Bilgilerini Düzenle / Ayarlar",
+        "finans_ayarlari": "📈 Üretim ve Satış Hedefleri (Finansal Ayarlar)",
         "degisiklik_kaydet": "💾 Değişiklikleri Kaydet",
-        "guncelleme_basarili": "🎉 Tarla bilgileri başarıyla güncellendi!"
+        "guncelleme_basarili": "🎉 Bilgiler başarıyla güncellendi!"
     },
     "EN": {
         "baslik": "🌾 AI Smart Agri Control Center",
@@ -81,8 +82,9 @@ dil_sozlugu = {
         "alarm_uyari": "⚠️ **SYSTEM WARNING:** Conditions require attention. Details sent to **{email}**.",
         "alarm_normal": "✅ **NOTIFICATION CENTER:** Everything is optimal. Daily report sent to **{email}**.",
         "tarla_ayarlari": "⚙️ Edit Field Information / Settings",
+        "finans_ayarlari": "📈 Production and Sales Targets (Financial Settings)",
         "degisiklik_kaydet": "💾 Save Changes",
-        "guncelleme_basarili": "🎉 Field information successfully updated!"
+        "guncelleme_basarili": "🎉 Information successfully updated!"
     }
 }
 
@@ -161,7 +163,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
 
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU (REKOLTE VE FİYAT EKLENDİ) ---
+# --- VERİTABANI KURULUMU ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -187,7 +189,6 @@ def veritabani_otomatik_kur():
     )
     """)
     
-    # Yeni sütunları mevcut veritabanına sorunsuz ekleme
     try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN alan_m2 REAL DEFAULT 0.0"); baglanti.commit()
     except: pass
     try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN rekolte_kg REAL DEFAULT 0.0"); baglanti.commit()
@@ -494,46 +495,63 @@ else:
             st.subheader(f"🌾 Arazi Kontrol Merkezi | {tarla_adi.upper()}")
             st.caption(f"Yönetici: {kullanici.upper()} | Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
             
-            # YENİ EKLENEN: TARLA BİLGİLERİNİ VE FİNANSAL GİRDİLERİ GÜNCELLEME ALANI
-            with st.expander(_t("tarla_ayarlari"), expanded=False):
-                with st.form(f"guncelle_form_{tarla_adi}"):
-                    st.write("**Arazi Kimlik Bilgileri**")
-                    col_ay1, col_ay2 = st.columns(2)
-                    with col_ay1:
-                        g_tarla_adi = st.text_input("Tarla Adı:", value=tarla_adi)
-                        g_alan = st.number_input("Alan (m²):", value=float(alan_m2), min_value=0.0, step=100.0)
-                        g_ada = st.text_input("Ada No:", value=ada)
-                    with col_ay2:
+            # ---------------------------------------------------------
+            # YENİ MODÜL: AYARLAR VE FİNANS İKİYE AYRILDI (YAN YANA SÜTUN)
+            # ---------------------------------------------------------
+            col_ayarlar, col_finans = st.columns(2)
+            
+            # 1. KUTU: TARLA AYARLARI
+            with col_ayarlar:
+                with st.expander(_t("tarla_ayarlari"), expanded=False):
+                    with st.form(f"guncelle_form_{tarla_adi}"):
+                        st.write("**Arazi Kimlik Bilgileri**" if secilen_dil == "TR" else "**Field Identification Info**")
+                        
+                        g_tarla_adi = st.text_input("Tarla Adı / Field Name:", value=tarla_adi)
                         urunler = ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"] if secilen_dil == "TR" else ["Cotton", "Olive", "Wheat", "Corn", "Sunflower", "Citrus", "Tomato", "Other"]
                         varsayilan_indeks = urunler.index(urun_turu) if urun_turu in urunler else 0
-                        g_urun = st.selectbox("Yetiştirilen Mahsul:", urunler, index=varsayilan_indeks)
-                        g_parsel = st.text_input("Parsel No:", value=parsel)
-
-                    st.write("---")
-                    st.write("**💰 Üretim ve Satış Hedefleri (Finansal Veriler)**")
-                    col_fin_g1, col_fin_g2 = st.columns(2)
-                    with col_fin_g1:
-                        g_rekolte = st.number_input("Beklenen/Gerçekleşen Hasat Miktarı (kg) / Harvest (kg):", value=float(rekolte_kg), min_value=0.0, step=50.0)
-                    with col_fin_g2:
-                        g_fiyat = st.number_input("Birim Satış Fiyatı (TL/kg) / Price (TRY/kg):", value=float(birim_fiyat), min_value=0.0, step=1.0)
+                        g_urun = st.selectbox("Yetiştirilen Mahsul / Crop:", urunler, index=varsayilan_indeks)
+                        g_alan = st.number_input("Alan / Area (m²):", value=float(alan_m2), min_value=0.0, step=100.0)
                         
-                    st.write("---")
-                    st.caption("Eğer tarlanın harita konumunu (koordinatlarını) değiştirmek istiyorsanız aşağıdaki alanları doldurun. Doldurmazsanız eski konum geçerli kalır.")
-                    col_il1, col_il2 = st.columns(2)
-                    with col_il1: g_il = st.text_input("Yeni İl (İsteğe Bağlı):")
-                    with col_il2: g_ilce = st.text_input("Yeni İlçe (İsteğe Bağlı):")
-                    
-                    if st.form_submit_button(_t("degisiklik_kaydet"), use_container_width=True):
-                        yeni_enlem, yeni_boylam = t_enlem, t_boylam 
-                        if g_il and g_ilce:
-                            y_en, y_boy = koordinat_bul(g_il, g_ilce)
-                            yeni_enlem, yeni_boylam = y_en, y_boy
+                        col_ap1, col_ap2 = st.columns(2)
+                        with col_ap1: g_ada = st.text_input("Ada No / Block:", value=ada)
+                        with col_ap2: g_parsel = st.text_input("Parsel No / Parcel:", value=parsel)
                             
-                        sql_tarla_guncelle(kullanici, tarla_adi, g_tarla_adi, g_urun, g_ada, g_parsel, float(g_alan), yeni_enlem, yeni_boylam, float(g_rekolte), float(g_fiyat))
-                        st.success(_t("guncelleme_basarili"))
-                        st.rerun()
+                        st.write("---")
+                        st.caption("Konum değiştirmek için (İsteğe bağlı) / To change location (Optional):")
+                        col_il1, col_il2 = st.columns(2)
+                        with col_il1: g_il = st.text_input("Yeni İl / New State:")
+                        with col_il2: g_ilce = st.text_input("Yeni İlçe / New City:")
+                        
+                        if st.form_submit_button(_t("degisiklik_kaydet"), use_container_width=True):
+                            yeni_enlem, yeni_boylam = t_enlem, t_boylam 
+                            if g_il and g_ilce:
+                                y_en, y_boy = koordinat_bul(g_il, g_ilce)
+                                yeni_enlem, yeni_boylam = y_en, y_boy
+                                
+                            sql_tarla_guncelle(kullanici, tarla_adi, g_tarla_adi, g_urun, g_ada, g_parsel, float(g_alan), yeni_enlem, yeni_boylam, float(rekolte_kg), float(birim_fiyat))
+                            st.success(_t("guncelleme_basarili"))
+                            st.rerun()
+
+            # 2. KUTU: FİNANSAL AYARLAR
+            with col_finans:
+                with st.expander(_t("finans_ayarlari"), expanded=False):
+                    with st.form(f"finans_form_{tarla_adi}"):
+                        st.write("**💰 Üretim ve Satış Hedefleri / Production & Sales Targets**")
+                        
+                        g_rekolte = st.number_input("Beklenen veya Gerçekleşen Hasat (kg) / Harvest (kg):", value=float(rekolte_kg), min_value=0.0, step=50.0)
+                        g_fiyat = st.number_input("Birim Satış Fiyatı (TL/kg) / Unit Price (TRY/kg):", value=float(birim_fiyat), min_value=0.0, step=1.0)
+                        
+                        st.write(" ")
+                        st.caption("Not: Buraya girdiğiniz veriler, tarlanın finansal tablosunu ve işletmenin genel bütçe raporunu doğrudan etkiler.")
+                        st.write(" ")
+                        
+                        if st.form_submit_button(_t("degisiklik_kaydet"), use_container_width=True):
+                            sql_tarla_guncelle(kullanici, tarla_adi, tarla_adi, urun_turu, ada, parsel, float(alan_m2), t_enlem, t_boylam, float(g_rekolte), float(g_fiyat))
+                            st.success(_t("guncelleme_basarili"))
+                            st.rerun()
 
             st.markdown("---")
+            # ---------------------------------------------------------
 
             if "aktif_tarla_nemi" not in st.session_state or st.session_state.get("secili_tarla") != tarla_adi:
                 st.session_state["aktif_tarla_nemi"] = akilli_nem_simulasyonu()
