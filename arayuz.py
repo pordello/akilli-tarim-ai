@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (CANLI AJANDA & GÖREV TABLOSU EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (GÖREV GÜNCELLEME VE SİLME EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -162,10 +162,25 @@ def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar):
     baglanti.commit()
     baglanti.close()
 
-# YENİ: VERİTABANINDAN AJANDA TABLOSUNU ÇEKME FONKSİYONU
-def sql_takvim_verileri_getir(k_adi):
+# YENİ: Görev Güncelleme ve Silme Fonksiyonları
+def sql_takvim_etkinlik_guncelle(gorev_id, yeni_tarih, yeni_not):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    df = pd.read_sql_query("SELECT islem_turu as 'Faaliyet Türü', tarih as 'Planlanan Tarih', notlar as 'Durum / Notlar' FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
+    kursor = baglanti.cursor()
+    kursor.execute("UPDATE tarim_takvimi SET tarih = ?, notlar = ? WHERE id = ?", (yeni_tarih, yeni_not, gorev_id))
+    baglanti.commit()
+    baglanti.close()
+
+def sql_takvim_etkinlik_sil(gorev_id):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    kursor = baglanti.cursor()
+    kursor.execute("DELETE FROM tarim_takvimi WHERE id = ?", (gorev_id,))
+    baglanti.commit()
+    baglanti.close()
+
+def sql_takvim_verileri_getir_ham(k_adi):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    # İşlemler için arka planda ID'yi de çekiyoruz
+    df = pd.read_sql_query("SELECT id, islem_turu, tarih, notlar FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
     baglanti.close()
     return df
 
@@ -387,6 +402,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
 
         st.write(" ")
         if st.button("💾 Analizi Günlükle", use_container_width=True):
+            su_anki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             sql_analiz_kaydet(kullanici, int(toprak_nemi), float(canli_sicaklik), ai_mesaj)
             st.toast("Veriler veritabanına başarıyla işlendi!")
             st.rerun()
@@ -425,7 +441,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 use_container_width=True
             )
 
-    # --- YENİ EKLENEN BÖLÜM: CANLI TARIM AJANDASI ---
+    # --- CANLI TARIM AJANDASI VE GÜNCELLEME ALANI ---
     st.markdown("---")
     st.subheader("📅 Dijital Tarım Ajandası & Görev Takibi", divider="gray")
     
@@ -445,8 +461,51 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 
     with col_ajanda2:
         st.write("**Planlanan ve Geçmiş Görevleriniz**")
-        df_takvim = sql_takvim_verileri_getir(kullanici)
-        if not df_takvim.empty:
-            st.dataframe(df_takvim, use_container_width=True, hide_index=True)
+        df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici)
+        
+        if not df_takvim_ham.empty:
+            # Ekranda şık görünmesi için ID sütununu gizleyip isimleri düzeltiyoruz
+            df_gosterim = df_takvim_ham.rename(columns={"islem_turu": "Faaliyet Türü", "tarih": "Planlanan Tarih", "notlar": "Durum / Notlar"})
+            st.dataframe(df_gosterim[["Faaliyet Türü", "Planlanan Tarih", "Durum / Notlar"]], use_container_width=True, hide_index=True)
+            
+            st.write("---")
+            st.write("**✏️ Mevcut Bir Görevi Güncelle veya Sil**")
+            
+            # Güncellenecek görevi seçmek için açılır menü
+            gorev_secenekleri = df_takvim_ham.apply(lambda row: f"ID:{row['id']} | {row['islem_turu']} ({row['tarih']})", axis=1).tolist()
+            secilen_gorev_metin = st.selectbox("Düzenlemek istediğiniz görevi seçin:", gorev_secenekleri)
+            
+            if secilen_gorev_metin:
+                # Seçilen görevin ID'sini metin içinden ayıklıyoruz
+                secilen_id = int(secilen_gorev_metin.split("|")[0].replace("ID:", "").strip())
+                secilen_satir = df_takvim_ham[df_takvim_ham['id'] == secilen_id].iloc[0]
+                
+                c1, c2, c3 = st.columns([1, 1, 1.5])
+                with c1:
+                    mevcut_tarih_str = secilen_satir['tarih']
+                    try:
+                        mevcut_tarih = datetime.strptime(mevcut_tarih_str, "%Y-%m-%d").date()
+                    except:
+                        mevcut_tarih = datetime.now().date()
+                    
+                    yeni_guncel_tarih = st.date_input("Yeni Tarih:", value=mevcut_tarih, key=f"date_{secilen_id}")
+                
+                with c2:
+                    yeni_guncel_not = st.text_input("Yeni Not / Durum:", value=secilen_satir['notlar'], key=f"not_{secilen_id}")
+                    
+                with c3:
+                    st.write(" ")
+                    st.write(" ")
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("🔄 Güncelle", key=f"btn_guncelle_{secilen_id}", use_container_width=True):
+                            sql_takvim_etkinlik_guncelle(secilen_id, str(yeni_guncel_tarih), yeni_guncel_not)
+                            st.success("Görev başarıyla güncellendi!")
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("🗑️ Sil", key=f"btn_sil_{secilen_id}", use_container_width=True):
+                            sql_takvim_etkinlik_sil(secilen_id)
+                            st.error("Görev tablodan tamamen silindi!")
+                            st.rerun()
         else:
             st.info("Henüz planlanmış bir tarımsal faaliyetiniz bulunmuyor. Sol taraftaki paneli kullanarak yeni bir görev ekleyebilirsiniz.")
