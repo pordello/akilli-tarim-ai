@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (HASTALIK RİSK ANALİZ MODÜLÜ ENTEGRELİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (CANLI AJANDA & GÖREV TABLOSU EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -49,10 +49,9 @@ def akilli_nem_simulasyonu():
     else:
         return random.randint(50, 75)
 
-# --- YENİ: YAPAY ZEKA HASTALIK RİSK TAHMİN MOTORU ---
+# --- YAPAY ZEKA HASTALIK RİSK TAHMİN MOTORU ---
 def ai_hastalik_risk_analizi(urun, sicaklik, nem):
-    """Hava durumu verilerine göre ürüne özel hastalık riskini hesaplar."""
-    risk_skoru = 10 # Başlangıç baz risk skoru (%)
+    risk_skoru = 10 
     detay_mesaj = "Hava şartları mahsul sağlığı için elverişli görünüyor."
     hastalik_adi = "Mantar ve Bakteri Riski"
 
@@ -80,7 +79,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem):
             risk_skoru = 75
             detay_mesaj = "⚠️ Serin ve nemli hava pas (püskül) hastalığı için ideal ortam oluşturuyor."
             
-    else: # Diğer genel ürünler için kök çürüklüğü riski
+    else: 
         hastalik_adi = "Kök Çürüklüğü & Mantar"
         if nem > 75:
             risk_skoru = 80
@@ -162,6 +161,13 @@ def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar):
     kursor.execute("INSERT INTO tarim_takvimi (kullanici_adi, islem_turu, tarih, notlar) VALUES (?, ?, ?, ?)", (k_adi, islem, tarih, notlar))
     baglanti.commit()
     baglanti.close()
+
+# YENİ: VERİTABANINDAN AJANDA TABLOSUNU ÇEKME FONKSİYONU
+def sql_takvim_verileri_getir(k_adi):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    df = pd.read_sql_query("SELECT islem_turu as 'Faaliyet Türü', tarih as 'Planlanan Tarih', notlar as 'Durum / Notlar' FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
+    baglanti.close()
+    return df
 
 def sql_analiz_kaydet(k_adi, nem, sicaklik, karar):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -368,7 +374,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
         else:
             st.success(f"**AI SULAMA KARARI:**\n\n{ai_mesaj}")
             
-        # YENİ: HASTALIK RİSK ANALİZ GÖSTERİMİ
         st.write(" ")
         h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi)
         st.write(f"🦠 **AI Hastalık Risk Analizi ({h_adi})**")
@@ -420,14 +425,28 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 use_container_width=True
             )
 
+    # --- YENİ EKLENEN BÖLÜM: CANLI TARIM AJANDASI ---
     st.markdown("---")
-
-    with st.expander("📅 Dijital Tarım Ajandası & İş Planlama Faaliyetleri", expanded=False):
-        col_t1, col_t2 = st.columns(2)
-        with col_t1:
-            islem = st.selectbox("İşlem:", ["Gübreleme", "İlaçlama", "Hasat"], key="task_ajanda")
-        with col_t2:
-            tarih = st.date_input("Tarih:", key="date_ajanda")
-            if st.button("🗓️ Takvime İşle", use_container_width=True):
-                sql_takvim_etkinlik_ekle(kullanici, islem, str(tarih), "Planlandı")
-                st.success("İşlem başarıyla takvime kaydedildi.")
+    st.subheader("📅 Dijital Tarım Ajandası & Görev Takibi", divider="gray")
+    
+    col_ajanda1, col_ajanda2 = st.columns([1, 2.5])
+    
+    with col_ajanda1:
+        with st.form("yeni_gorev_formu"):
+            st.write("**Yeni Faaliyet Planla**")
+            yeni_islem = st.selectbox("İşlem Türü:", ["Gübreleme", "İlaçlama", "Hasat", "Toprak Analizi", "Budama", "Sulama (Manuel)", "Diğer"])
+            yeni_tarih = st.date_input("Planlanan Tarih:")
+            yeni_not = st.text_input("Durum / Notlar:", value="Planlandı")
+            
+            if st.form_submit_button("🗓️ Takvime İşle", use_container_width=True):
+                sql_takvim_etkinlik_ekle(kullanici, yeni_islem, str(yeni_tarih), yeni_not)
+                st.success("Faaliyet başarıyla kaydedildi!")
+                st.rerun()
+                
+    with col_ajanda2:
+        st.write("**Planlanan ve Geçmiş Görevleriniz**")
+        df_takvim = sql_takvim_verileri_getir(kullanici)
+        if not df_takvim.empty:
+            st.dataframe(df_takvim, use_container_width=True, hide_index=True)
+        else:
+            st.info("Henüz planlanmış bir tarımsal faaliyetiniz bulunmuyor. Sol taraftaki paneli kullanarak yeni bir görev ekleyebilirsiniz.")
