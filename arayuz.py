@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (DEPO & STOK YÖNETİMİ EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (AJANDA - DEPO ENTEGRASYONU)
 # ==============================================================================
 
 import streamlit as st
@@ -139,7 +139,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
             detay_mesaj = "🚨 Aşırı toprak nemi köklerin nefes almasını engelliyor!" if dil == "TR" else "🚨 Excessive soil moisture prevents roots from breathing!"
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU (DEPO TABLOSU EKLENDİ) ---
+# --- VERİTABANI KURULUMU ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -160,7 +160,6 @@ def veritabani_otomatik_kur():
         id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, tarla_adi TEXT NOT NULL, nem INTEGER NOT NULL,
         sicaklik INTEGER NOT NULL, karar TEXT NOT NULL, tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         
-    # YENİ EKLENEN DEPO TABLOSU
     kursor.execute("""CREATE TABLE IF NOT EXISTS depo_envanter (
         id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, 
         urun_adi TEXT NOT NULL, kategori TEXT NOT NULL, miktar REAL NOT NULL, 
@@ -260,7 +259,7 @@ def sql_analizleri_getir(k_adi, tarla):
     df = pd.read_sql_query("SELECT nem, sicaklik, karar, tarih FROM tarla_gunlukleri WHERE kullanici_adi = ? AND tarla_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi, tarla))
     baglanti.close(); return df
 
-# YENİ DEPO FONKSİYONLARI
+# --- DEPO FONKSİYONLARI ---
 def sql_depo_urun_ekle(k_adi, urun_adi, kategori, miktar, birim, kritik):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -342,7 +341,6 @@ else:
     st.sidebar.markdown(f"👤 **{kullanici.upper()}**")
     st.sidebar.markdown("---")
     
-    # YENİ MENÜ DÜZENİ: Genel Merkez -> Depo Yönetimi -> Tarlalar -> Yeni Tarla Ekle
     menu_secenekleri = [_t("genel_merkez"), _t("depo_yonetimi")] + [t[0] for t in tarlalar_listesi] + [_t("yeni_tarla_ekle")]
     aktif_secim = st.sidebar.radio("📌 Menü / Menu", menu_secenekleri)
     
@@ -353,7 +351,7 @@ else:
         st.rerun()
 
     # ==========================================
-    # 1. YENİ EKLENEN: DEPO VE STOK YÖNETİMİ
+    # 1. DEPO VE STOK YÖNETİMİ
     # ==========================================
     if aktif_secim == _t("depo_yonetimi"):
         st.subheader(f"📦 Depo ve Envanter Kontrol Merkezi")
@@ -362,7 +360,6 @@ else:
         
         df_depo = sql_depo_urun_getir(kullanici)
         
-        # Kritik Stok Uyarısı (Eğer miktar eşikten küçükse uyar)
         if not df_depo.empty:
             kritik_urunler = df_depo[df_depo['miktar'] <= df_depo['kritik_esik']]
             if not kritik_urunler.empty:
@@ -373,7 +370,6 @@ else:
 
         col_d1, col_d2 = st.columns([1, 2.5])
         
-        # Stok Ekleme Formu
         with col_d1:
             with st.form("yeni_stok_formu"):
                 st.write("**Yeni Ürün / Stok Ekle**")
@@ -392,7 +388,6 @@ else:
                     else:
                         st.warning("Lütfen ürün adını giriniz.")
                         
-        # Stok Listesi ve Stok Düşme
         with col_d2:
             st.write("**Mevcut Depo Durumu**")
             if not df_depo.empty:
@@ -400,9 +395,8 @@ else:
                 st.dataframe(df_gosterim[["Ürün Adı", "Kategori", "Kalan Miktar", "Birim", "Uyarı Eşiği"]], use_container_width=True, hide_index=True)
                 
                 st.write("---")
-                st.write("**➖ Stoktan Malzeme Kullan (Düş)**")
+                st.write("**➖ Stoktan Manuel Malzeme Düş**")
                 c_kullan1, c_kullan2, c_kullan3 = st.columns([2, 1, 1])
-                
                 stok_secenekleri = df_depo.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist()
                 
                 with c_kullan1: secili_stok = st.selectbox("Kullanılan Ürünü Seçin:", stok_secenekleri)
@@ -416,15 +410,13 @@ else:
                             mevcut_miktar = df_depo[df_depo['id'] == s_id].iloc[0]['miktar']
                             yeni_miktar = max(0.0, mevcut_miktar - dusulecek_miktar)
                             sql_depo_miktar_guncelle(s_id, yeni_miktar)
-                            st.success(f"Stok güncellendi. Yeni Miktar: {yeni_miktar}")
                             st.rerun()
                 
                 with st.expander("Gelişmiş Seçenekler: Ürünü Depodan Sil", expanded=False):
                     sil_stok = st.selectbox("Tamamen Silinecek Ürünü Seçin:", stok_secenekleri, key="sil_stok_box")
                     if st.button("🗑️ Ürünü Kalıcı Olarak Sil", type="primary"):
                         if sil_stok:
-                            s_id = int(sil_stok.split("|")[0].replace("ID:", "").strip())
-                            sql_depo_urun_sil(s_id)
+                            sql_depo_urun_sil(int(sil_stok.split("|")[0].replace("ID:", "").strip()))
                             st.rerun()
             else:
                 st.info("Deponuz şu an boş. Sol taraftaki formu kullanarak gübre, ilaç veya yakıt stoklarınızı eklemeye başlayın.")
@@ -609,23 +601,53 @@ else:
                     sim_kar = (rekolte_kg * sim_fiyat) + devlet_destegi - toplam_gider - toplam_kredi_maliyeti
                     st.success(f"Piyasa fiyatı **{sim_fiyat} TL** olursa, net kârınız: **{sim_kar:,.0f} TL** olacaktır.")
 
-            # --- AJANDA ---
+            # --- YENİ: AJANDA & DEPO ENTEGRASYONU ---
             st.markdown("---")
             st.subheader(_t("ajanda_baslik"), divider="gray")
+            
+            # Formun üstünde deponun anlık verisini çekiyoruz
+            df_depo_anlik = sql_depo_urun_getir(kullanici)
+            depo_secenekleri = ["-- Depodan Ürün Kullanma --"]
+            if not df_depo_anlik.empty:
+                depo_secenekleri += df_depo_anlik.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist()
             
             ca1, ca2 = st.columns([1, 2])
             with ca1:
                 with st.form(f"f_gorev_{tarla_adi}"):
                     y_kat = st.selectbox("Maliyet Kategorisi:", ["Mazot/Yakıt", "Gübre", "Zirai İlaç", "İşçi Yevmiyesi", "Tohum/Fide", "Su/Elektrik", "Amortisman", "Diğer"])
-                    y_islem = st.text_input("Yapılan İşlem Özeti:")
+                    y_islem = st.text_input("Yapılan İşlem Özeti (*):")
+                    
+                    st.write("---")
+                    st.write("📦 **Depo Kullanımı (İsteğe Bağlı)**")
+                    y_depo_secim = st.selectbox("Stoktan Düşülecek Ürün:", depo_secenekleri)
+                    y_depo_miktar = st.number_input("Kullanılan Miktar:", min_value=0.0, step=1.0)
+                    st.write("---")
+                    
                     y_tarih = st.date_input("Tarih:")
-                    y_maliyet = st.number_input("Tutar (TL):", min_value=0.0, step=100.0)
+                    y_maliyet = st.number_input("Ek Maliyet/Tutar (TL):", min_value=0.0, step=100.0)
                     y_not = st.text_input("Durum Notu:", value="Tamamlandı")
                     
-                    if st.form_submit_button("🗓️ Gideri İşle", use_container_width=True):
+                    if st.form_submit_button("🗓️ Gideri İşle ve Stoktan Düş", use_container_width=True):
                         if y_islem:
+                            # Eğer depodan ürün seçilmişse ve miktar 0'dan büyükse
+                            if y_depo_secim != "-- Depodan Ürün Kullanma --" and y_depo_miktar > 0:
+                                s_id = int(y_depo_secim.split("|")[0].replace("ID:", "").strip())
+                                mevcut_stok = df_depo_anlik[df_depo_anlik['id'] == s_id].iloc[0]['miktar']
+                                urun_isim = df_depo_anlik[df_depo_anlik['id'] == s_id].iloc[0]['urun_adi']
+                                u_birim = df_depo_anlik[df_depo_anlik['id'] == s_id].iloc[0]['birim']
+                                
+                                # Stok miktarını güncelle
+                                yeni_miktar = max(0.0, mevcut_stok - y_depo_miktar)
+                                sql_depo_miktar_guncelle(s_id, yeni_miktar)
+                                
+                                # Ajanda notuna otomatik bilgi ekle
+                                ek_not = f"[Depodan {y_depo_miktar} {u_birim} {urun_isim} kullanıldı]"
+                                y_not = f"{y_not} - {ek_not}" if y_not else ek_not
+                                
                             sql_takvim_etkinlik_ekle(kullanici, tarla_adi, y_islem, str(y_tarih), y_not, float(y_maliyet), y_kat)
                             st.rerun()
+                        else:
+                            st.warning("Lütfen işlem özeti giriniz.")
                             
             with ca2:
                 if not df_takvim_ham.empty:
