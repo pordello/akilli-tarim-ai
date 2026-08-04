@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (DEPO ÜRÜN GÜNCELLEME EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (AI ZİRAAT ASİSTANI EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import altair as alt
+import time
 
 st.set_page_config(page_title="AI Akıllı Tarım Paneli", page_icon="🌾", layout="wide")
 
@@ -37,6 +38,7 @@ dil_sozlugu = {
         "hastalik_riski": "🦠 AI Hastalık Risk Analizi",
         "genel_merkez": "🏠 Genel Tarla Rapor Merkezi",
         "depo_yonetimi": "📦 Depo ve Stok Yönetimi",
+        "ai_asistan": "🤖 AI Ziraat Asistanı",
         "yeni_tarla_ekle": "➕ Yeni Arazi / Tarla Ekle",
         "tarla_ayarlari": "⚙️ Tarla Bilgilerini Düzenle / Ayarlar",
         "finans_ayarlari": "📈 Finansal Parametreler & Kredi Ayarları",
@@ -65,6 +67,7 @@ dil_sozlugu = {
         "hastalik_riski": "🦠 AI Disease Risk Analysis",
         "genel_merkez": "🏠 General Field Report Center",
         "depo_yonetimi": "📦 Warehouse & Stock Mgmt",
+        "ai_asistan": "🤖 AI Agri Assistant",
         "yeni_tarla_ekle": "➕ Add New Field / Land",
         "tarla_ayarlari": "⚙️ Edit Field Information / Settings",
         "finans_ayarlari": "📈 Financial Parameters & Loan Settings",
@@ -78,8 +81,7 @@ secilen_dil = st.sidebar.radio("Select Interface Language:", ["TR", "EN"])
 
 def _t(anahtar, **kwargs):
     metin = dil_sozlugu[secilen_dil].get(anahtar, anahtar)
-    if kwargs:
-        return metin.format(**kwargs)
+    if kwargs: return metin.format(**kwargs)
     return metin
 
 # --- API FONKSİYONLARI ---
@@ -92,8 +94,7 @@ def koordinat_bul(il, ilce):
         veri = cevap.json()
         if len(veri) > 0: return float(veri[0]['lat']), float(veri[0]['lon'])
         else: return 39.0, 35.0
-    except:
-        return 39.0, 35.0
+    except: return 39.0, 35.0
 
 def gercek_hava_durumu_getir(enlem, boylam):
     try:
@@ -139,7 +140,36 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
             detay_mesaj = "🚨 Aşırı toprak nemi köklerin nefes almasını engelliyor!" if dil == "TR" else "🚨 Excessive soil moisture prevents roots from breathing!"
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU ---
+# --- YENİ: AI SOHBET BOTU MANTIĞI ---
+def ai_sohbet_cevabi_uret(mesaj, dil="TR"):
+    mesaj = mesaj.lower()
+    
+    if dil == "TR":
+        if "pamuk" in mesaj and ("örümcek" in mesaj or "böcek" in mesaj):
+            return "Pamukta kırmızı örümcek (Tetranychus urticae) ciddi verim kaybı yapar. Abamectin veya Spiromesifen etken maddeli akarisitler kullanmanızı öneririm. İlaçlamayı sabah erken veya akşam serinliğinde yapmalısınız."
+        elif "pas" in mesaj or "sarı" in mesaj or "buğday" in mesaj:
+            return "Buğdayda pas hastalığı genelde yüksek nemde ortaya çıkar. Tebuconazole veya Epoxiconazole içeren sistemik fungisitler etkilidir. Lütfen tarlada homojen bir ilaçlama yapın."
+        elif "gübre" in mesaj or "azot" in mesaj:
+            return "Gübreleme bitkinin fenolojik evresine göre değişir. Genel kural olarak; fosfor ve potasyumu taban gübresi olarak ekim öncesi, azotlu gübreleri ise bitkinin büyüme döneminde parçalar halinde vermelisiniz."
+        elif "zeytin" in mesaj and "sinek" in mesaj:
+            return "Zeytin sineğine karşı vuruk oranını kontrol edin. Eğer %1-2'yi geçmişse Spinosad veya Deltamethrin içeren spesifik ilaçlarla zehirli yem kısmi dal ilaçlaması yapabilirsiniz."
+        elif "merhaba" in mesaj or "selam" in mesaj:
+            return "Merhaba! Ben yapay zeka destekli ziraat asistanınızım. Size hastalıklar, gübreleme, ilaçlama veya bütçe konularında nasıl yardımcı olabilirim?"
+        else:
+            return "Bu harika bir soru. Sistemimizdeki zirai veritabanına göre, arazinizin spesifik toprak yapısını göz önünde bulundurarak lokal bir uzmana danışmanız veya sistem üzerinden toprak analizi görevini ajandaya eklemeniz en doğrusu olacaktır. Başka bir konuda yardımcı olabilir miyim?"
+    else:
+        if "cotton" in mesaj and ("mite" in mesaj or "spider" in mesaj):
+            return "For spider mites in cotton, I recommend acaricides with Abamectin or Spiromesifen. Apply during the cool hours of early morning or evening."
+        elif "rust" in mesaj or "wheat" in mesaj:
+            return "Wheat rust disease thrives in high humidity. Systemic fungicides containing Tebuconazole or Epoxiconazole are very effective. Ensure uniform spraying."
+        elif "fertilizer" in mesaj or "nitrogen" in mesaj:
+            return "Fertilization depends on the crop's phenological stage. Generally, apply phosphorus and potassium as base fertilizer before planting, and split nitrogen applications during the growing season."
+        elif "hello" in mesaj or "hi" in mesaj:
+            return "Hello! I am your AI-powered agricultural assistant. How can I help you today with crop diseases, fertilizers, or budget planning?"
+        else:
+            return "That's a great question. Based on our agricultural database, I recommend adding a 'Soil Analysis' task to your agenda for precise answers. Is there anything else I can help with?"
+
+# --- VERİTABANI KURULUMU VE FONKSİYONLARI ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -188,7 +218,6 @@ def veritabani_otomatik_kur():
 
 veritabani_otomatik_kur()
 
-# --- SQL YARDIMCI FONKSİYONLARI ---
 def sql_kullanici_kontrol(k_adi, sifre):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -215,8 +244,7 @@ def sql_yeni_tarla_ekle(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel,
         (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel, alan_m2, rekolte_kg, birim_fiyat, devlet_destegi, kredi_anapara, kredi_faiz) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0)""",
         (k_adi, sifre, tam_tarla_adi, v_enlem, v_boylam, email, urun, "Müşteri/Çiftçi", ada, parsel, alan_m2))
-        baglanti.commit()
-        baglanti.close()
+        baglanti.commit(); baglanti.close()
         return True
     except: return False 
 
@@ -259,7 +287,6 @@ def sql_analizleri_getir(k_adi, tarla):
     df = pd.read_sql_query("SELECT nem, sicaklik, karar, tarih FROM tarla_gunlukleri WHERE kullanici_adi = ? AND tarla_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi, tarla))
     baglanti.close(); return df
 
-# --- DEPO FONKSİYONLARI ---
 def sql_depo_urun_ekle(k_adi, urun_adi, kategori, miktar, birim, kritik):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -277,17 +304,11 @@ def sql_depo_miktar_guncelle(urun_id, yeni_miktar):
     kursor.execute("UPDATE depo_envanter SET miktar = ? WHERE id = ?", (yeni_miktar, urun_id))
     baglanti.commit(); baglanti.close()
 
-# YENİ: Depo ürünü tam güncelleme (İsim, Kategori vb. değişimi)
 def sql_depo_urun_tam_guncelle(urun_id, y_ad, y_kat, y_mik, y_birim, y_kritik):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    kursor.execute("""
-        UPDATE depo_envanter 
-        SET urun_adi=?, kategori=?, miktar=?, birim=?, kritik_esik=? 
-        WHERE id=?
-    """, (y_ad, y_kat, y_mik, y_birim, y_kritik, urun_id))
-    baglanti.commit()
-    baglanti.close()
+    kursor.execute("UPDATE depo_envanter SET urun_adi=?, kategori=?, miktar=?, birim=?, kritik_esik=? WHERE id=?", (y_ad, y_kat, y_mik, y_birim, y_kritik, urun_id))
+    baglanti.commit(); baglanti.close()
 
 def sql_depo_urun_sil(urun_id):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -345,7 +366,7 @@ if not st.session_state["giris_yapildi"]:
                         else: st.error("⚠️ Kayıt Hatası! Kullanıcı adı alınmış olabilir.")
                     else: st.warning("Lütfen (*) alanları doldurun.")
 
-# --- ANA PANEL VE ÇOKLU TARLA MENÜSÜ ---
+# --- ANA PANEL VE ÇOKLU MENÜ ---
 else:
     kullanici = st.session_state["aktif_kullanici"]
     tarlalar_listesi = sql_kullanicinin_tarlalarini_getir(kullanici)
@@ -353,7 +374,8 @@ else:
     st.sidebar.markdown(f"👤 **{kullanici.upper()}**")
     st.sidebar.markdown("---")
     
-    menu_secenekleri = [_t("genel_merkez"), _t("depo_yonetimi")] + [t[0] for t in tarlalar_listesi] + [_t("yeni_tarla_ekle")]
+    # YENİ MENÜ DÜZENİ: AI Asistan eklendi!
+    menu_secenekleri = [_t("genel_merkez"), _t("depo_yonetimi"), _t("ai_asistan")] + [t[0] for t in tarlalar_listesi] + [_t("yeni_tarla_ekle")]
     aktif_secim = st.sidebar.radio("📌 Menü / Menu", menu_secenekleri)
     
     st.sidebar.markdown("---")
@@ -363,25 +385,63 @@ else:
         st.rerun()
 
     # ==========================================
-    # 1. DEPO VE STOK YÖNETİMİ
+    # 1. YENİ MODÜL: AI ZİRAAT ASİSTANI (CHATBOT)
     # ==========================================
-    if aktif_secim == _t("depo_yonetimi"):
+    if aktif_secim == _t("ai_asistan"):
+        st.subheader("🤖 Yapay Zeka Destekli Ziraat Mühendisi")
+        st.caption("Mahsulünüzdeki hastalıklar, gübreleme takvimi veya verimlilik hakkında tüm sorularınızı sorabilirsiniz." if secilen_dil == "TR" else "Ask any questions about crop diseases, fertilization schedule, or yield efficiency.")
+        st.markdown("---")
+
+        # Chat geçmişini oturumda tut
+        if "chat_gecmisi" not in st.session_state:
+            karsilama = "Merhaba! Tarlalarınızın dijital ziraat mühendisiyim. Hastalıklar veya ilaçlama ile ilgili ne öğrenmek istersiniz?" if secilen_dil == "TR" else "Hello! I'm your digital agricultural engineer. What would you like to know about diseases or treatments?"
+            st.session_state["chat_gecmisi"] = [{"rol": "asistan", "icerik": karsilama}]
+
+        # Geçmişi Ekrana Çiz
+        for mesaj in st.session_state["chat_gecmisi"]:
+            if mesaj["rol"] == "asistan":
+                with st.chat_message("assistant", avatar="🤖"): st.markdown(mesaj["icerik"])
+            else:
+                with st.chat_message("user", avatar="👤"): st.markdown(mesaj["icerik"])
+
+        # Chat Girdi Kutusu (Input)
+        mesaj_kutusu = "Sorunuzu buraya yazın... (Örn: Pamukta kırmızı örümcek için ne yapmalıyım?)" if secilen_dil == "TR" else "Type your question here... (e.g. What should I do for spider mites in cotton?)"
+        
+        if prompt := st.chat_input(mesaj_kutusu):
+            # Kullanıcı mesajını ekle
+            st.session_state["chat_gecmisi"].append({"rol": "kullanici", "icerik": prompt})
+            with st.chat_message("user", avatar="👤"): st.markdown(prompt)
+
+            # Yapay Zeka Cevabını Simüle Et
+            with st.chat_message("assistant", avatar="🤖"):
+                mesaj_alani = st.empty()
+                mesaj_alani.markdown("Yazıyor... ⏳" if secilen_dil == "TR" else "Typing... ⏳")
+                time.sleep(1.0) # İnternetten çekiyormuş gibi 1 saniye bekle
+                
+                # Cevabı al ve ekrana bas
+                ai_cevabi = ai_sohbet_cevabi_uret(prompt, secilen_dil)
+                mesaj_alani.markdown(ai_cevabi)
+                
+            st.session_state["chat_gecmisi"].append({"rol": "asistan", "icerik": ai_cevabi})
+
+    # ==========================================
+    # 2. DEPO VE STOK YÖNETİMİ
+    # ==========================================
+    elif aktif_secim == _t("depo_yonetimi"):
         st.subheader(f"📦 Depo ve Envanter Kontrol Merkezi")
         st.caption("Tüm arazilerinizde kullandığınız zirai ilaç, gübre, tohum ve yakıt stoklarınızı buradan yönetin.")
         st.markdown("---")
         
         df_depo = sql_depo_urun_getir(kullanici)
-        
         if not df_depo.empty:
             kritik_urunler = df_depo[df_depo['miktar'] <= df_depo['kritik_esik']]
             if not kritik_urunler.empty:
                 st.error("🚨 **KRİTİK STOK UYARISI:** Aşağıdaki ürünlerin stoğu tükenmek üzere, acil tedarik planlayın!")
                 for index, row in kritik_urunler.iterrows():
-                    st.warning(f"⚠️ {row['urun_adi']} ({row['kategori']}) - Kalan: {row['miktar']} {row['birim']} (Kritik Eşik: {row['kritik_esik']})")
+                    st.warning(f"⚠️ {row['urun_adi']} ({row['kategori']}) - Kalan: {row['miktar']} {row['birim']}")
                 st.markdown("---")
 
         col_d1, col_d2 = st.columns([1, 2.5])
-        
         with col_d1:
             with st.form("yeni_stok_formu"):
                 st.write("**Yeni Ürün / Stok Ekle**")
@@ -395,42 +455,20 @@ else:
                 if st.form_submit_button("📦 Depoya Ekle", use_container_width=True):
                     if d_urun_adi:
                         sql_depo_urun_ekle(kullanici, d_urun_adi, d_kategori, float(d_miktar), d_birim, float(d_kritik))
-                        st.success("Ürün depoya eklendi!")
                         st.rerun()
-                    else:
-                        st.warning("Lütfen ürün adını giriniz.")
-                        
+
         with col_d2:
             st.write("**Mevcut Depo Durumu**")
             if not df_depo.empty:
                 df_gosterim = df_depo.rename(columns={"urun_adi":"Ürün Adı", "kategori":"Kategori", "miktar":"Kalan Miktar", "birim":"Birim", "kritik_esik":"Uyarı Eşiği"})
                 st.dataframe(df_gosterim[["Ürün Adı", "Kategori", "Kalan Miktar", "Birim", "Uyarı Eşiği"]], use_container_width=True, hide_index=True)
                 
-                st.write("---")
-                st.write("**➖ Stoktan Manuel Malzeme Düş**")
-                c_kullan1, c_kullan2, c_kullan3 = st.columns([2, 1, 1])
-                stok_secenekleri = df_depo.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist()
-                
-                with c_kullan1: secili_stok = st.selectbox("Kullanılan Ürünü Seçin:", stok_secenekleri)
-                with c_kullan2: dusulecek_miktar = st.number_input("Kullanılan Miktar:", min_value=0.0, step=1.0)
-                with c_kullan3:
-                    st.write(" ")
-                    st.write(" ")
-                    if st.button("🔽 Stoktan Düş", use_container_width=True):
-                        if secili_stok and dusulecek_miktar > 0:
-                            s_id = int(secili_stok.split("|")[0].replace("ID:", "").strip())
-                            mevcut_miktar = df_depo[df_depo['id'] == s_id].iloc[0]['miktar']
-                            yeni_miktar = max(0.0, mevcut_miktar - dusulecek_miktar)
-                            sql_depo_miktar_guncelle(s_id, yeni_miktar)
-                            st.rerun()
-                
-                # YENİ EKLENEN: STOK GÜNCELLEME ALANI
                 with st.expander("⚙️ Stok Bilgilerini Düzenle / Güncelle", expanded=False):
+                    stok_secenekleri = df_depo.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']}", axis=1).tolist()
                     guncellenecek_stok = st.selectbox("Düzenlenecek Ürünü Seçin:", stok_secenekleri, key="guncelle_stok_box")
                     if guncellenecek_stok:
                         s_id = int(guncellenecek_stok.split("|")[0].replace("ID:", "").strip())
                         secilen_urun = df_depo[df_depo['id'] == s_id].iloc[0]
-                        
                         with st.form("stok_guncelleme_formu"):
                             col_g1, col_g2 = st.columns(2)
                             with col_g1:
@@ -438,18 +476,12 @@ else:
                                 yeni_miktar = st.number_input("Yeni Miktar:", value=float(secilen_urun['miktar']), min_value=0.0)
                             with col_g2:
                                 kategoriler = ["Zirai İlaç", "Gübre", "Tohum/Fide", "Mazot/Yakıt", "Ambalaj", "Diğer"]
-                                v_kat_idx = kategoriler.index(secilen_urun['kategori']) if secilen_urun['kategori'] in kategoriler else 0
-                                yeni_kat = st.selectbox("Yeni Kategori:", kategoriler, index=v_kat_idx)
-                                
+                                yeni_kat = st.selectbox("Yeni Kategori:", kategoriler, index=kategoriler.index(secilen_urun['kategori']) if secilen_urun['kategori'] in kategoriler else 0)
                                 birimler = ["kg", "Litre", "Torba", "Adet", "Ton"]
-                                v_birim_idx = birimler.index(secilen_urun['birim']) if secilen_urun['birim'] in birimler else 0
-                                yeni_birim = st.selectbox("Yeni Birim:", birimler, index=v_birim_idx)
-                            
+                                yeni_birim = st.selectbox("Yeni Birim:", birimler, index=birimler.index(secilen_urun['birim']) if secilen_urun['birim'] in birimler else 0)
                             yeni_kritik = st.number_input("Yeni Kritik Eşik:", value=float(secilen_urun['kritik_esik']), min_value=0.0)
-                            
                             if st.form_submit_button("💾 Bilgileri Güncelle", use_container_width=True):
                                 sql_depo_urun_tam_guncelle(s_id, yeni_ad, yeni_kat, yeni_miktar, yeni_birim, yeni_kritik)
-                                st.success("Ürün başarıyla güncellendi!")
                                 st.rerun()
 
                 with st.expander("Gelişmiş Seçenekler: Ürünü Depodan Sil", expanded=False):
@@ -459,10 +491,10 @@ else:
                             sql_depo_urun_sil(int(sil_stok.split("|")[0].replace("ID:", "").strip()))
                             st.rerun()
             else:
-                st.info("Deponuz şu an boş. Sol taraftaki formu kullanarak gübre, ilaç veya yakıt stoklarınızı eklemeye başlayın.")
+                st.info("Deponuz şu an boş.")
 
     # ==========================================
-    # 2. YENİ TARLA EKLEME EKRANI
+    # 3. YENİ TARLA EKLEME EKRANI
     # ==========================================
     elif aktif_secim == _t("yeni_tarla_ekle"):
         st.subheader(f"➕ İşletmenize Yeni Bir Arazi / Tarla Ekleyin")
@@ -477,19 +509,15 @@ else:
                 y_ilce = st.text_input("İlçe / City (*)")
                 y_parsel = st.text_input("Parsel No / Parcel")
                 y_tarla_adi = st.text_input("Tarla Adı (Örn: Kuzey Parsel) (*)")
-                
             urunler = ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"] if secilen_dil == "TR" else ["Cotton", "Olive", "Wheat", "Corn", "Sunflower", "Citrus", "Tomato", "Other"]
             y_urun = st.selectbox("Mahsul / Crop", urunler)
-            
             if st.form_submit_button("🚀 Tarlayı Ekle", use_container_width=True):
                 if y_il and y_ilce and y_tarla_adi:
                     sql_yeni_tarla_ekle(kullanici, "12345", y_tarla_adi, y_il, y_ilce, tarlalar_listesi[0][3], y_urun, y_ada, y_parsel, float(y_alan))
                     st.rerun()
-                else:
-                    st.warning("Zorunlu alanları doldurun.")
 
     # ==========================================
-    # 3. GENEL TARLA RAPOR MERKEZİ (ÖZET)
+    # 4. GENEL TARLA RAPOR MERKEZİ (ÖZET)
     # ==========================================
     elif aktif_secim == _t("genel_merkez"):
         st.subheader(f"🏠 ERP Genel Rapor Merkezi | İşletme Özeti")
@@ -504,10 +532,8 @@ else:
             toplam_tahmini_gelir += (t[9] * t[10])
             toplam_destek += t[11]
             toplam_kredi_odeme += (t[12] + (t[12] * t[13] / 100))
-            
             df_g = sql_takvim_verileri_getir_ham(kullanici, t[0])
-            if not df_g.empty:
-                toplam_sirket_gideri += df_g['maliyet'].sum()
+            if not df_g.empty: toplam_sirket_gideri += df_g['maliyet'].sum()
                 
         genel_net_kar = toplam_tahmini_gelir + toplam_destek - toplam_sirket_gideri - toplam_kredi_odeme
 
@@ -522,7 +548,7 @@ else:
         st.dataframe(tarlalar_df[["Tarla Adı", "Mahsul", "Alan(m²)", "Hasat(kg)", "Fiyat(TL)", "Destek(TL)"]], use_container_width=True, hide_index=True)
 
     # ==========================================
-    # 4. TARLA DETAY VE FİNANS (ERP) PANELİ
+    # 5. TARLA DETAY VE FİNANS (ERP) PANELİ
     # ==========================================
     else:
         aktif_tarla_verisi = next((t for t in tarlalar_listesi if t[0] == aktif_secim), None)
@@ -532,7 +558,6 @@ else:
             st.subheader(f"{_t('baslik')} | {tarla_adi.upper()}")
             st.caption(f"Yönetici: {kullanici.upper()} | Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
             
-            # --- AYARLAR VE ERP FİNANS GİRDİLERİ ---
             col_ayarlar, col_finans = st.columns(2)
             with col_ayarlar:
                 with st.expander(_t("tarla_ayarlari"), expanded=False):
@@ -552,14 +577,12 @@ else:
             with col_finans:
                 with st.expander(_t("finans_ayarlari"), expanded=False):
                     with st.form(f"g_finans_{tarla_adi}"):
-                        st.write("**💰 Üretim Hedefi & Hibe Destekleri**")
                         c_f1, c_f2 = st.columns(2)
                         with c_f1: g_rekolte = st.number_input("Hasat Beklentisi (kg):", value=float(rekolte_kg), min_value=0.0)
                         with c_f2: g_fiyat = st.number_input("Satış Fiyatı (TL/kg):", value=float(birim_fiyat), min_value=0.0)
                         g_destek = st.number_input("Devlet Desteği / Hibe (TL):", value=float(devlet_destegi), min_value=0.0)
                         
                         st.write("---")
-                        st.write("**🏦 Tarım Kredisi ve Finansman**")
                         c_k1, c_k2 = st.columns(2)
                         with c_k1: g_kanapara = st.number_input("Çekilen Kredi (TL):", value=float(kredi_anapara), min_value=0.0)
                         with c_k2: g_kfaiz = st.number_input("Faiz Oranı (%):", value=float(kredi_faiz), min_value=0.0)
@@ -569,8 +592,6 @@ else:
                             st.rerun()
 
             st.markdown("---")
-
-            # --- SENSÖRLER VE YAPAY ZEKA ---
             if "aktif_tarla_nemi" not in st.session_state or st.session_state.get("secili_tarla") != tarla_adi:
                 st.session_state["aktif_tarla_nemi"] = akilli_nem_simulasyonu()
                 st.session_state["aktif_tarla_sicaklik"] = gercek_hava_durumu_getir(t_enlem, t_boylam) or random.randint(22, 38)
@@ -593,7 +614,6 @@ else:
                 elif h_skor >= 40: st.warning(f"**{h_adi} (%{h_skor}):** {h_mesaj}")
                 else: st.success(f"**{h_adi} (%{h_skor}):** {h_mesaj}")
 
-            # --- ERP BÜTÇE VE FİNANS MERKEZİ ---
             st.markdown("---")
             st.subheader(f"💼 Dijital Finans & Risk Yönetimi", divider="orange")
             
@@ -611,7 +631,7 @@ else:
             cm2.metric("Devlet Desteği", f"₺ {devlet_destegi:,.0f}")
             cm3.metric("Toplam Gider", f"₺ {toplam_gider:,.0f}")
             cm4.metric("Kredi Geri Ödeme", f"₺ {toplam_kredi_maliyeti:,.0f}")
-            cm5.metric("Net Kâr", f"₺ {net_kar:,.0f}", delta="Kârlı" if net_kar > 0 else "Zarar Riski")
+            cm5.metric("Net Kâr", f"₺ {net_kar:,.0f}", delta="Kârlı" if net_kar > 0 else "Zarar")
             
             st.write(" ")
             col_f_sol, col_f_sag = st.columns([1, 1])
@@ -626,22 +646,18 @@ else:
                         tooltip=['maliyet_kategorisi', 'maliyet']
                     ).properties(height=250)
                     st.altair_chart(fig, use_container_width=True)
-                else:
-                    st.info("Henüz ajandaya girilmiş bir maliyet bulunmuyor.")
+                else: st.info("Gider bulunmuyor.")
                     
             with col_f_sag:
                 st.write("**🎯 Birim Maliyet & Risk Analizi**")
                 st.info(f"💡 **1 Kg Ürünün Size Maliyeti:** {birim_maliyet:.2f} TL")
-                st.warning(f"⚖️ **Başabaş Noktası:** Zarar etmemek için ürünün kilosu en az **{basabas:.2f} TL**'ye satılmalıdır.")
-                
+                st.warning(f"⚖️ **Başabaş Noktası:** Zarar etmemek için ürün en az **{basabas:.2f} TL**'ye satılmalıdır.")
                 st.write("---")
-                st.write("**🔮 Fiyat Dalgalanma Simülatörü**")
                 if birim_fiyat > 0:
-                    sim_fiyat = st.slider("Borsada Satış Fiyatı Düşer/Artarsa Ne Olur?", 0.0, float(birim_fiyat*2), float(birim_fiyat), step=0.5)
+                    sim_fiyat = st.slider("Borsada Satış Fiyatı Değişimi:", 0.0, float(birim_fiyat*2), float(birim_fiyat), step=0.5)
                     sim_kar = (rekolte_kg * sim_fiyat) + devlet_destegi - toplam_gider - toplam_kredi_maliyeti
-                    st.success(f"Piyasa fiyatı **{sim_fiyat} TL** olursa, net kârınız: **{sim_kar:,.0f} TL** olacaktır.")
+                    st.success(f"Piyasa fiyatı **{sim_fiyat} TL** olursa, net kâr: **{sim_kar:,.0f} TL**")
 
-            # --- AJANDA & DEPO ENTEGRASYONU ---
             st.markdown("---")
             st.subheader(_t("ajanda_baslik"), divider="gray")
             
