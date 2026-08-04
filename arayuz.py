@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (AKILLI BİLDİRİM VE ALARM MERKEZİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (GELİŞMİŞ KURUMSAL RAPORLAMA EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -9,7 +9,6 @@ import sqlite3
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import time
 
 st.set_page_config(page_title="AI Akıllı Tarım Paneli", page_icon="🌾", layout="wide")
 
@@ -64,7 +63,6 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem):
         elif sicaklik > 25 and nem > 60:
             risk_skoru = 60
             detay_mesaj = "⚠️ Nemli ve sıcak hava Verticillium Solgunluğu mantarını tetikleyebilir."
-            
     elif urun == "Zeytin":
         hastalik_adi = "Zeytin Halkalı Leke Hastalığı"
         if 15 <= sicaklik <= 22 and nem > 70:
@@ -73,13 +71,11 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem):
         elif sicaklik > 28:
             risk_skoru = 20
             detay_mesaj = "✅ Yüksek sıcaklık zeytin sineği ve mantar faaliyetlerini yavaşlatıyor."
-
     elif urun == "Buğday":
         hastalik_adi = "Buğdayda Pas Hastalığı (Küf)"
         if 10 <= sicaklik <= 20 and nem > 65:
             risk_skoru = 75
             detay_mesaj = "⚠️ Serin ve nemli hava pas (püskül) hastalığı için ideal ortam oluşturuyor."
-            
     else: 
         hastalik_adi = "Kök Çürüklüğü & Mantar"
         if nem > 75:
@@ -111,13 +107,11 @@ def veritabani_otomatik_kur():
         sicaklik INTEGER NOT NULL, karar TEXT NOT NULL, tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-    
     try:
         kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0")
         baglanti.commit()
     except:
         pass 
-        
     try:
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        ("yunus", "12345", "Yunus Beyin Pamuk Tarlası (Adana)", 37.00, 35.32, "yonetici_yunus@example.com", "Pamuk", "Admin", "104", "12"))
@@ -280,20 +274,7 @@ else:
     kullanici = st.session_state["aktif_kullanici"]
     tarla_adi, t_enlem, t_boylam, m_email, urun_turu, rol, ada, parsel = st.session_state["kullanici_bilgileri"]
 
-    col_header_text, col_header_logout_btn = st.columns([8.5, 1.5])
-    with col_header_text:
-        st.subheader(f"🌾 AI Akıllı Tarım Kontrol Merkezi | {tarla_adi.upper()}")
-        st.caption(f"Yönetici: {kullanici.upper()} ({rol}) | Ada/Parsel: {ada}/{parsel}")
-    with col_header_logout_btn:
-        st.write("") 
-        if st.button("🚪 Çıkış Yap", type="primary", use_container_width=True):
-            st.session_state["giris_yapildi"] = False
-            st.session_state["aktif_kullanici"] = ""
-            st.rerun()
-
-    st.markdown(" ")
-    
-    # --- SENSÖR OKUMA VE AI ANALİZİ ---
+    # --- DEĞERLERİN ÖNCEDEN HESAPLANMASI (RAPOR İÇİN GEREKLİ) ---
     if "toprak_nemi" not in st.session_state:
         st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
         gercek_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
@@ -306,20 +287,47 @@ else:
     if toprak_nemi < 30 and canli_sicaklik > 30:
         ai_mesaj = "🔥 KRİTİK: Toprak kuru, hava sıcak! Acil sulama başlatıldı."
         ai_durum = "error"
+        css_durum = "box-danger"
     elif toprak_nemi < 30:
         ai_mesaj = "💧 UYARI: Nem düşük, standart sulama açıldı."
         ai_durum = "warning"
+        css_durum = "box-warning"
     else:
         ai_mesaj = "✅ NORMAL: Nem yeterli, sulama kapalı. Su tasarrufu yapılıyor."
         ai_durum = "success"
+        css_durum = "box-success"
 
     # AI Hastalık Kararı
     h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi)
+    h_css = "box-danger" if h_skor >= 75 else "box-warning" if h_skor >= 40 else "box-success"
 
-    # --- YENİ EKLENEN BÖLÜM: BİLDİRİM VE ALARM MERKEZİ ---
+    # Finans Hesaplamaları
+    df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici)
+    toplam_gider = 0.0
+    if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns:
+        toplam_gider = df_takvim_ham['maliyet'].sum()
+        
+    baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000}
+    tahmini_gelir = baz_getiri.get(urun_turu, 100000)
+    beklenen_kar = tahmini_gelir - toplam_gider
+
+    # --- ARAYÜZ YÜKLEMESİ BAŞLIYOR ---
+    col_header_text, col_header_logout_btn = st.columns([8.5, 1.5])
+    with col_header_text:
+        st.subheader(f"🌾 AI Akıllı Tarım Kontrol Merkezi | {tarla_adi.upper()}")
+        st.caption(f"Yönetici: {kullanici.upper()} ({rol}) | Ada/Parsel: {ada}/{parsel}")
+    with col_header_logout_btn:
+        st.write("") 
+        if st.button("🚪 Çıkış Yap", type="primary", use_container_width=True):
+            st.session_state["giris_yapildi"] = False
+            st.session_state["aktif_kullanici"] = ""
+            st.rerun()
+
+    st.markdown(" ")
+
+    # BİLDİRİM VE ALARM MERKEZİ
     if ai_durum == "error" or h_skor >= 75:
         st.error(f"🚨 **KRİTİK ALARM:** Yapay zeka tarlada risk tespit etti! Eylem planı **{m_email}** adresinize ve cep telefonunuza iletilmiştir.")
-        # Sayfa yüklendiğinde bir kez uyarı mesajı (Toast) göster
         if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
             st.toast("📲 SMS İLETİLDİ: Sayın Çiftçimiz, tarlanızda kritik durum tespit edildi!", icon="🚨")
             st.session_state["alarm_gosterildi"] = True
@@ -353,24 +361,80 @@ else:
             st.info("Personel yetkilendirme alanı yalnızca Admin rolüne açıktır.")
 
     with col_top_right:
-        with st.expander("🖨️ RAPORLAMA ÇIKTI İSTASYON MERKEZİ", expanded=False):
-            st.caption("Yapay zeka analiz raporunu resmi kurumsal evrak olarak hemen indirebilirsiniz.")
+        with st.expander("🖨️ GELİŞMİŞ ÇIKTI VE RAPORLAMA MERKEZİ", expanded=False):
+            st.caption("Yapay zeka analiz raporunuzu kurumsal formatta PDF olarak yazdırılmak üzere indirebilirsiniz.")
             
-            rapor_icerigi = f"""============================================================
-AI AKILLI TARIM PLATFORMU - RESMİ TARLA DURUM RAPORU
-============================================================
-Mülk Sahibi: {kullanici.upper()} | Konum: {tarla_adi.upper()}
-Ada / Parsel No: {ada} / {parsel} | Mahsul Türü: {urun_turu}
-------------------------------------------------------------
-ANLIK ANALİZ VERİLERİ (Tarih: {datetime.now().strftime("%Y-%m-%d %H:%M")}):
-Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_nemi}
-============================================================
-"""
+            # YENİ NESİL HTML KURUMSAL RAPOR OLUŞTURUCU
+            html_rapor = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="UTF-8">
+            <title>Akıllı Tarım Raporu</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #2c3e50; background-color: #ffffff; }}
+                .header {{ text-align: center; border-bottom: 3px solid #2ecc71; padding-bottom: 20px; margin-bottom: 30px; }}
+                .header h1 {{ color: #27ae60; margin: 0; font-size: 28px; }}
+                .header p {{ color: #7f8c8d; font-size: 14px; margin-top: 5px; }}
+                .info-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+                .info-table th, .info-table td {{ border: 1px solid #e0e0e0; padding: 12px; text-align: left; }}
+                .info-table th {{ background-color: #f8f9fa; width: 35%; font-weight: 600; color: #34495e; }}
+                .section-title {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; margin-top: 30px; font-size: 18px; }}
+                .box {{ padding: 15px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; }}
+                .box-success {{ background-color: #eaeded; color: #27ae60; border-left: 5px solid #27ae60; }}
+                .box-warning {{ background-color: #fef9e7; color: #d35400; border-left: 5px solid #f39c12; }}
+                .box-danger {{ background-color: #fdedec; color: #c0392b; border-left: 5px solid #e74c3c; }}
+            </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>🌾 AI Akıllı Tarım Platformu</h1>
+                    <h2 style="color:#2c3e50; margin-top: 10px;">Resmi Saha ve Finans Raporu</h2>
+                    <p>Oluşturulma Tarihi: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                </div>
+
+                <h3 class="section-title">📍 Müşteri ve Tesis Bilgileri</h3>
+                <table class="info-table">
+                    <tr><th>Mülk Sahibi</th><td>{kullanici.upper()}</td></tr>
+                    <tr><th>Tesis Adı</th><td>{tarla_adi.upper()}</td></tr>
+                    <tr><th>Ada / Parsel</th><td>{ada} / {parsel}</td></tr>
+                    <tr><th>Yetiştirilen Mahsul</th><td>{urun_turu}</td></tr>
+                </table>
+
+                <h3 class="section-title">📊 Anlık Çevresel Metrikler</h3>
+                <table class="info-table">
+                    <tr><th>Hava Sıcaklığı (Bölgesel)</th><td>{canli_sicaklik} °C</td></tr>
+                    <tr><th>Sensör Toprak Nemi</th><td>%{toprak_nemi}</td></tr>
+                </table>
+
+                <h3 class="section-title">🤖 Yapay Zeka Karar Merkezi</h3>
+                <div class="box {css_durum}">
+                    💧 Sulama Kararı: {ai_mesaj}
+                </div>
+                <div class="box {h_css}">
+                    🦠 Hastalık Riski ({h_adi}): %{h_skor} <br><br> Tespit: {h_mesaj}
+                </div>
+
+                <h3 class="section-title">💰 Finansal Analiz ve Bütçe (Sezonluk)</h3>
+                <table class="info-table">
+                    <tr><th>Toplam Operasyonel Gider</th><td>₺ {toplam_gider:,.2f}</td></tr>
+                    <tr><th>Tahmini Hasat Geliri</th><td>₺ {tahmini_gelir:,.2f}</td></tr>
+                    <tr><th>Beklenen Net Kâr / Zarar Durumu</th><td>₺ {beklenen_kar:,.2f}</td></tr>
+                </table>
+                
+                <p style="text-align: center; color: #95a5a6; font-size: 11px; margin-top: 50px;">
+                    Bu belge AI Akıllı Tarım Platformu algoritmaları tarafından otomatik olarak üretilmiş resmi bir analiz raporudur.<br>
+                    Yazdır (Ctrl + P) kısayolunu kullanarak PDF olarak arşivleyebilirsiniz.
+                </p>
+            </body>
+            </html>
+            """
+            
             st.download_button(
-                label="📄 Kurumsal Tarla Raporunu İndir (.txt)",
-                data=rapor_icerigi,
-                file_name=f"{kullanici}_tarla_raporu.txt",
-                mime="text/plain",
+                label="📄 Kurumsal Web Raporunu İndir (.html / PDF'e Uygun)",
+                data=html_rapor,
+                file_name=f"{kullanici}_resmi_rapor.html",
+                mime="text/html",
                 use_container_width=True
             )
 
@@ -385,7 +449,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             else:
                 st.session_state["canli_sicaklik"] = random.randint(22, 38)
             st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
-            st.session_state["alarm_gosterildi"] = False # Yenilemede alarm tekrar çıksın diye
+            st.session_state["alarm_gosterildi"] = False 
             st.rerun()
 
     df_kayitlar = sql_analizleri_getir(kullanici)
@@ -471,16 +535,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
     st.markdown("---")
     st.subheader("💰 Finansal Analiz & Sezonluk Bütçe Raporu", divider="red")
     
-    df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici)
-    toplam_gider = 0.0
-    
-    if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns:
-        toplam_gider = df_takvim_ham['maliyet'].sum()
-        
-    baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000}
-    tahmini_gelir = baz_getiri.get(urun_turu, 100000)
-    beklenen_kar = tahmini_gelir - toplam_gider
-
     col_fin1, col_fin2, col_fin3 = st.columns(3)
     col_fin1.metric(label="Toplam Operasyonel Gider (TL)", value=f"₺ {toplam_gider:,.2f}")
     col_fin2.metric(label=f"Tahmini Hasat Geliri ({urun_turu})", value=f"₺ {tahmini_gelir:,.2f}")
