@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (M² ALAN HESABI EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TARLA GÜNCELLEME VE AYARLAR EKLENDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -44,7 +44,10 @@ dil_sozlugu = {
         "yeni_tarla_ekle": "➕ Yeni Arazi / Tarla Ekle",
         "alarm_kritik": "🚨 **KRİTİK ALARM:** Yapay zeka tarlada risk tespit etti! Eylem planı **{email}** adresinize iletildi.",
         "alarm_uyari": "⚠️ **SİSTEM UYARISI:** Tarlada dikkat edilmesi gereken durumlar var. Detaylar **{email}** adresine iletildi.",
-        "alarm_normal": "✅ **BİLDİRİM MERKEZİ:** Her şey yolunda. Günlük olağan rapor **{email}** adresine gönderildi."
+        "alarm_normal": "✅ **BİLDİRİM MERKEZİ:** Her şey yolunda. Günlük olağan rapor **{email}** adresine gönderildi.",
+        "tarla_ayarlari": "⚙️ Tarla Bilgilerini Düzenle / Ayarlar",
+        "degisiklik_kaydet": "💾 Değişiklikleri Kaydet",
+        "guncelleme_basarili": "🎉 Tarla bilgileri başarıyla güncellendi!"
     },
     "EN": {
         "baslik": "🌾 AI Smart Agri Control Center",
@@ -76,7 +79,10 @@ dil_sozlugu = {
         "yeni_tarla_ekle": "➕ Add New Field / Land",
         "alarm_kritik": "🚨 **CRITICAL ALARM:** AI detected field risks! Action plan sent to **{email}**.",
         "alarm_uyari": "⚠️ **SYSTEM WARNING:** Conditions require attention. Details sent to **{email}**.",
-        "alarm_normal": "✅ **NOTIFICATION CENTER:** Everything is optimal. Daily report sent to **{email}**."
+        "alarm_normal": "✅ **NOTIFICATION CENTER:** Everything is optimal. Daily report sent to **{email}**.",
+        "tarla_ayarlari": "⚙️ Edit Field Information / Settings",
+        "degisiklik_kaydet": "💾 Save Changes",
+        "guncelleme_basarili": "🎉 Field information successfully updated!"
     }
 }
 
@@ -155,7 +161,7 @@ def ai_hastalik_risk_analizi(urun, sicaklik, nem, dil="TR"):
 
     return hastalik_adi, risk_skoru, detay_mesaj
 
-# --- VERİTABANI KURULUMU (ALAN M² EKLENDİ) ---
+# --- VERİTABANI KURULUMU ---
 def veritabani_otomatik_kur():
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -181,27 +187,14 @@ def veritabani_otomatik_kur():
     )
     """)
     
-    # Mevcut veritabanlarına zarar vermeden yeni sütunları ekliyoruz
-    try:
-        kursor.execute("ALTER TABLE kullanicilar ADD COLUMN alan_m2 REAL DEFAULT 0.0")
-        baglanti.commit()
-    except:
-        pass
-    try:
-        kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'")
-        baglanti.commit()
-    except:
-        pass
-    try:
-        kursor.execute("ALTER TABLE tarla_gunlukleri ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'")
-        baglanti.commit()
-    except:
-        pass
-    try:
-        kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0")
-        baglanti.commit()
-    except:
-        pass 
+    try: kursor.execute("ALTER TABLE kullanicilar ADD COLUMN alan_m2 REAL DEFAULT 0.0"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE tarla_gunlukleri ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0"); baglanti.commit()
+    except: pass 
         
     kursor.execute("SELECT COUNT(*) FROM kullanicilar WHERE kullanici_adi = 'yunus'")
     if kursor.fetchone()[0] == 0:
@@ -243,6 +236,27 @@ def sql_yeni_tarla_ekle(k_adi, sifre, tarla, il, ilce, email, urun, ada, parsel,
         return True
     except:
         return False 
+
+# YENİ: TARLA GÜNCELLEME FONKSİYONU
+def sql_tarla_guncelle(k_adi, eski_tarla_adi, yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    kursor = baglanti.cursor()
+    
+    # Ana tabloyu güncelle
+    kursor.execute("""
+        UPDATE kullanicilar 
+        SET tarla_adi=?, urun_turu=?, ada=?, parsel=?, alan_m2=?, enlem=?, boylam=? 
+        WHERE kullanici_adi=? AND tarla_adi=?
+    """, (yeni_tarla_adi, yeni_urun, yeni_ada, yeni_parsel, yeni_alan, yeni_enlem, yeni_boylam, k_adi, eski_tarla_adi))
+    
+    # İsim değiştiyse geçmiş kayıtların senkronizasyonu
+    if eski_tarla_adi != yeni_tarla_adi:
+        kursor.execute("UPDATE tarim_takvimi SET tarla_adi=? WHERE kullanici_adi=? AND tarla_adi=?", (yeni_tarla_adi, k_adi, eski_tarla_adi))
+        kursor.execute("UPDATE tarla_gunlukleri SET tarla_adi=? WHERE kullanici_adi=? AND tarla_adi=?", (yeni_tarla_adi, k_adi, eski_tarla_adi))
+        
+    baglanti.commit()
+    baglanti.close()
+    return True
 
 def sql_takvim_etkinlik_ekle(k_adi, tarla_adi, islem, tarih, notlar, maliyet):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -478,6 +492,37 @@ else:
             
             st.subheader(f"🌾 Arazi Kontrol Merkezi | {tarla_adi.upper()}")
             st.caption(f"Yönetici: {kullanici.upper()} | Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
+            
+            # YENİ EKLENEN: TARLA BİLGİLERİNİ GÜNCELLEME ALANI
+            with st.expander(_t("tarla_ayarlari"), expanded=False):
+                with st.form(f"guncelle_form_{tarla_adi}"):
+                    col_ay1, col_ay2 = st.columns(2)
+                    with col_ay1:
+                        g_tarla_adi = st.text_input("Tarla Adı (Tamamı):", value=tarla_adi)
+                        g_alan = st.number_input("Alan (m²):", value=float(alan_m2), min_value=0.0, step=100.0)
+                        g_ada = st.text_input("Ada No:", value=ada)
+                    with col_ay2:
+                        urunler = ["Pamuk", "Zeytin", "Buğday", "Mısır", "Ayçiçeği", "Narenciye", "Domates", "Diğer"] if secilen_dil == "TR" else ["Cotton", "Olive", "Wheat", "Corn", "Sunflower", "Citrus", "Tomato", "Other"]
+                        varsayilan_indeks = urunler.index(urun_turu) if urun_turu in urunler else 0
+                        g_urun = st.selectbox("Yetiştirilen Mahsul:", urunler, index=varsayilan_indeks)
+                        g_parsel = st.text_input("Parsel No:", value=parsel)
+                        
+                    st.write("---")
+                    st.caption("Eğer tarlanın harita konumunu (koordinatlarını) değiştirmek istiyorsanız aşağıdaki alanları doldurun. Doldurmazsanız eski konum geçerli kalır.")
+                    col_il1, col_il2 = st.columns(2)
+                    with col_il1: g_il = st.text_input("Yeni İl (İsteğe Bağlı):")
+                    with col_il2: g_ilce = st.text_input("Yeni İlçe (İsteğe Bağlı):")
+                    
+                    if st.form_submit_button(_t("degisiklik_kaydet"), use_container_width=True):
+                        yeni_enlem, yeni_boylam = t_enlem, t_boylam # Varsayılan eski koordinatlar
+                        if g_il and g_ilce:
+                            y_en, y_boy = koordinat_bul(g_il, g_ilce)
+                            yeni_enlem, yeni_boylam = y_en, y_boy
+                            
+                        sql_tarla_guncelle(kullanici, tarla_adi, g_tarla_adi, g_urun, g_ada, g_parsel, float(g_alan), yeni_enlem, yeni_boylam)
+                        st.success(_t("guncelleme_basarili"))
+                        st.rerun()
+
             st.markdown("---")
 
             if "aktif_tarla_nemi" not in st.session_state or st.session_state.get("secili_tarla") != tarla_adi:
@@ -492,15 +537,12 @@ else:
             if toprak_nemi < 30 and canli_sicaklik > 30:
                 ai_mesaj = _t("ai_kuru")
                 ai_durum = "error"
-                css_durum = "box-danger"
             elif toprak_nemi < 30:
                 ai_mesaj = _t("ai_uyari")
                 ai_durum = "warning"
-                css_durum = "box-warning"
             else:
                 ai_mesaj = _t("ai_normal")
                 ai_durum = "success"
-                css_durum = "box-success"
 
             h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi, secilen_dil)
 
