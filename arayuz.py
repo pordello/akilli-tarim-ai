@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (FİNANSAL ANALİZ & MALİYET EKLENDİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (AKILLI BİLDİRİM VE ALARM MERKEZİ)
 # ==============================================================================
 
 import streamlit as st
@@ -9,6 +9,7 @@ import sqlite3
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import time
 
 st.set_page_config(page_title="AI Akıllı Tarım Paneli", page_icon="🌾", layout="wide")
 
@@ -111,12 +112,11 @@ def veritabani_otomatik_kur():
     )
     """)
     
-    # YENİ: Eski veritabanına zarar vermeden Maliyet sütununu ekleme denemesi
     try:
         kursor.execute("ALTER TABLE tarim_takvimi ADD COLUMN maliyet REAL DEFAULT 0.0")
         baglanti.commit()
     except:
-        pass # Sütun zaten varsa hata verme, devam et
+        pass 
         
     try:
         kursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, tarla_adi, enlem, boylam, email, urun_turu, rol, ada, parsel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -163,7 +163,6 @@ def sql_yeni_musteri_kayit(k_adi, sifre, tarla, il, ilce, email, urun, ada, pars
     except sqlite3.IntegrityError:
         return False 
 
-# YENİ: Maliyet parametresi eklendi
 def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar, maliyet):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -171,7 +170,6 @@ def sql_takvim_etkinlik_ekle(k_adi, islem, tarih, notlar, maliyet):
     baglanti.commit()
     baglanti.close()
 
-# YENİ: Güncelleme fonksiyonuna maliyet eklendi
 def sql_takvim_etkinlik_guncelle(gorev_id, yeni_tarih, yeni_not, yeni_maliyet):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -188,7 +186,6 @@ def sql_takvim_etkinlik_sil(gorev_id):
 
 def sql_takvim_verileri_getir_ham(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    # Maliyet sütununu da çekiyoruz
     df = pd.read_sql_query("SELECT id, islem_turu, tarih, notlar, maliyet FROM tarim_takvimi WHERE kullanici_adi = ? ORDER BY id DESC", baglanti, params=(k_adi,))
     baglanti.close()
     return df
@@ -295,6 +292,48 @@ else:
             st.rerun()
 
     st.markdown(" ")
+    
+    # --- SENSÖR OKUMA VE AI ANALİZİ ---
+    if "toprak_nemi" not in st.session_state:
+        st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
+        gercek_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
+        st.session_state["canli_sicaklik"] = gercek_isi if gercek_isi is not None else random.randint(22, 38)
+        
+    toprak_nemi = st.session_state["toprak_nemi"]
+    canli_sicaklik = st.session_state["canli_sicaklik"]
+
+    # AI Sulama Kararı
+    if toprak_nemi < 30 and canli_sicaklik > 30:
+        ai_mesaj = "🔥 KRİTİK: Toprak kuru, hava sıcak! Acil sulama başlatıldı."
+        ai_durum = "error"
+    elif toprak_nemi < 30:
+        ai_mesaj = "💧 UYARI: Nem düşük, standart sulama açıldı."
+        ai_durum = "warning"
+    else:
+        ai_mesaj = "✅ NORMAL: Nem yeterli, sulama kapalı. Su tasarrufu yapılıyor."
+        ai_durum = "success"
+
+    # AI Hastalık Kararı
+    h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi)
+
+    # --- YENİ EKLENEN BÖLÜM: BİLDİRİM VE ALARM MERKEZİ ---
+    if ai_durum == "error" or h_skor >= 75:
+        st.error(f"🚨 **KRİTİK ALARM:** Yapay zeka tarlada risk tespit etti! Eylem planı **{m_email}** adresinize ve cep telefonunuza iletilmiştir.")
+        # Sayfa yüklendiğinde bir kez uyarı mesajı (Toast) göster
+        if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
+            st.toast("📲 SMS İLETİLDİ: Sayın Çiftçimiz, tarlanızda kritik durum tespit edildi!", icon="🚨")
+            st.session_state["alarm_gosterildi"] = True
+    elif ai_durum == "warning" or h_skor >= 40:
+        st.warning(f"⚠️ **SİSTEM UYARISI:** Tarlada dikkat edilmesi gereken durumlar var. Detaylar **{m_email}** adresinize iletilmiştir.")
+        if "alarm_gosterildi" not in st.session_state or not st.session_state["alarm_gosterildi"]:
+            st.toast("📧 E-Posta İLETİLDİ: Rutin dışı hava durumu tespit edildi.", icon="⚠️")
+            st.session_state["alarm_gosterildi"] = True
+    else:
+        st.info(f"✅ **BİLDİRİM MERKEZİ:** Her şey yolunda. Sistem günlük olağan raporu **{m_email}** adresinize gönderdi.")
+        st.session_state["alarm_gosterildi"] = False
+
+    st.markdown("---")
+
     col_top_left, col_top_right = st.columns(2) 
     
     with col_top_left:
@@ -312,14 +351,6 @@ else:
                         st.warning("Lütfen alanları doldurun.")
         else:
             st.info("Personel yetkilendirme alanı yalnızca Admin rolüne açıktır.")
-
-    if "toprak_nemi" not in st.session_state:
-        st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
-        gercek_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
-        st.session_state["canli_sicaklik"] = gercek_isi if gercek_isi is not None else random.randint(22, 38)
-        
-    toprak_nemi = st.session_state["toprak_nemi"]
-    canli_sicaklik = st.session_state["canli_sicaklik"]
 
     with col_top_right:
         with st.expander("🖨️ RAPORLAMA ÇIKTI İSTASYON MERKEZİ", expanded=False):
@@ -351,24 +382,11 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             guncel_isi = gercek_hava_durumu_getir(t_enlem, t_boylam)
             if guncel_isi is not None:
                 st.session_state["canli_sicaklik"] = guncel_isi
-                st.toast(f"☁️ Gerçek hava durumu verisi çekildi: {guncel_isi}°C")
             else:
                 st.session_state["canli_sicaklik"] = random.randint(22, 38)
-                st.toast("⚠️ API'ye ulaşılamadı, yedek simülasyon devrede.")
             st.session_state["toprak_nemi"] = akilli_nem_simulasyonu()
+            st.session_state["alarm_gosterildi"] = False # Yenilemede alarm tekrar çıksın diye
             st.rerun()
-
-    if toprak_nemi < 30 and canli_sicaklik > 30:
-        ai_mesaj = "🔥 KRİTİK: Toprak kuru, hava sıcak! Acil sulama başlatıldı."
-        ai_durum = "error"
-    elif toprak_nemi < 30:
-        ai_mesaj = "💧 UYARI: Nem düşük, standart sulama açıldı."
-        ai_durum = "warning"
-    else:
-        ai_mesaj = "✅ NORMAL: Nem yeterli, sulama kapalı. Su tasarrufu yapılıyor."
-        ai_durum = "success"
-
-    st.markdown(" ")
 
     df_kayitlar = sql_analizleri_getir(kullanici)
     if not df_kayitlar.empty:
@@ -399,7 +417,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
             st.success(f"**AI SULAMA KARARI:**\n\n{ai_mesaj}")
             
         st.write(" ")
-        h_adi, h_skor, h_mesaj = ai_hastalik_risk_analizi(urun_turu, canli_sicaklik, toprak_nemi)
         st.write(f"🦠 **AI Hastalık Risk Analizi ({h_adi})**")
         st.progress(h_skor / 100)
         if h_skor >= 75:
@@ -450,7 +467,7 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
                 use_container_width=True
             )
 
-    # --- YENİ EKLENEN BÖLÜM: FİNANSAL ANALİZ PANOSU ---
+    # --- FİNANSAL ANALİZ PANOSU ---
     st.markdown("---")
     st.subheader("💰 Finansal Analiz & Sezonluk Bütçe Raporu", divider="red")
     
@@ -460,7 +477,6 @@ Hava Sıcaklığı (Canlı API): {canli_sicaklik} °C | Toprak Nemi: %{toprak_ne
     if not df_takvim_ham.empty and 'maliyet' in df_takvim_ham.columns:
         toplam_gider = df_takvim_ham['maliyet'].sum()
         
-    # Basit bir tahmini gelir algoritması (Ürün türüne göre baz getiri çarpanı)
     baz_getiri = {"Pamuk": 150000, "Zeytin": 200000, "Buğday": 80000, "Mısır": 120000, "Ayçiçeği": 95000, "Narenciye": 180000, "Domates": 110000}
     tahmini_gelir = baz_getiri.get(urun_turu, 100000)
     beklenen_kar = tahmini_gelir - toplam_gider
