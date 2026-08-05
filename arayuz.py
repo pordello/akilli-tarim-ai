@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (STOK BUG FIX + TAM ERP SÜRÜMÜ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + FATURA DÜZENLEME)
 # ==============================================================================
 
 import streamlit as st
@@ -145,6 +145,7 @@ def veritabani_otomatik_kur():
         urun_adi TEXT NOT NULL, miktar REAL NOT NULL, birim_fiyat REAL NOT NULL, 
         toplam_tutar REAL NOT NULL, tedarikci TEXT NOT NULL, tarih TEXT NOT NULL)""")
     
+    # Eksik Sütun Kontrolleri (Güvenlik Amaçlı)
     for kolon in ["alan_m2", "rekolte_kg", "birim_fiyat", "devlet_destegi", "kredi_anapara", "kredi_faiz"]:
         try: kursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN {kolon} REAL DEFAULT 0.0"); baglanti.commit()
         except: pass
@@ -165,7 +166,7 @@ def veritabani_otomatik_kur():
 
 veritabani_otomatik_kur()
 
-# --- SQL YARDIMCI FONKSİYONLARI ---
+# --- SQL FONKSİYONLARI ---
 def sql_kullanici_kontrol(k_adi, sifre):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -203,7 +204,6 @@ def sql_tarla_guncelle(k_adi, e_tarla, y_tarla, y_urun, y_ada, y_parsel, y_alan,
         kursor.execute("UPDATE tarla_gunlukleri SET tarla_adi=? WHERE kullanici_adi=? AND tarla_adi=?", (y_tarla, k_adi, e_tarla))
     baglanti.commit(); baglanti.close(); return True
 
-# --- AJANDA & ANALİZ ---
 def sql_takvim_etkinlik_ekle(k_adi, tarla, islem, tarih, notlar, maliyet, kat):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO tarim_takvimi (kullanici_adi, tarla_adi, islem_turu, tarih, notlar, maliyet, maliyet_kategorisi) VALUES (?, ?, ?, ?, ?, ?, ?)", (k_adi, tarla, islem, tarih, notlar, maliyet, kat))
@@ -234,7 +234,7 @@ def sql_analizleri_getir(k_adi, tarla):
     df = pd.read_sql_query("SELECT nem, sicaklik, karar, tarih FROM tarla_gunlukleri WHERE kullanici_adi = ? AND tarla_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi, tarla))
     baglanti.close(); return df
 
-# --- AKILLI DEPO VE SATIN ALMA ---
+# YENİ DEPO SATIN ALMA FONKSİYONLARI
 def sql_depo_urun_ekle(k_adi, urun_adi, kategori, miktar, birim, kritik):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO depo_envanter (kullanici_adi, urun_adi, kategori, miktar, birim, kritik_esik) VALUES (?, ?, ?, ?, ?, ?)", (k_adi, urun_adi, kategori, miktar, birim, kritik))
@@ -252,8 +252,21 @@ def sql_depo_alim_kaydet(k_adi, urun_adi, miktar, b_fiyat, tedarikci, tarih, kat
 
 def sql_depo_alimlari_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    df = pd.read_sql_query("SELECT urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih FROM depo_alimlari WHERE kullanici_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi,))
+    # YENİ: id değerini de ekledik ki silebilelim veya düzenleyebilelim
+    df = pd.read_sql_query("SELECT id, urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih FROM depo_alimlari WHERE kullanici_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi,))
     baglanti.close(); return df
+
+# YENİ: SATIN ALMA (FATURA) DÜZENLEME VE SİLME FONKSİYONLARI
+def sql_depo_alim_guncelle(alim_id, miktar, b_fiyat, tedarikci, tarih):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    toplam = miktar * b_fiyat
+    baglanti.execute("UPDATE depo_alimlari SET miktar=?, birim_fiyat=?, toplam_tutar=?, tedarikci=?, tarih=? WHERE id=?", (miktar, b_fiyat, toplam, tedarikci, tarih, alim_id))
+    baglanti.commit(); baglanti.close()
+
+def sql_depo_alim_sil(alim_id):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    baglanti.execute("DELETE FROM depo_alimlari WHERE id = ?", (alim_id,))
+    baglanti.commit(); baglanti.close()
 
 def sql_depo_urun_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -275,7 +288,6 @@ def sql_depo_urun_sil(urun_id):
     baglanti.execute("DELETE FROM depo_envanter WHERE id = ?", (urun_id,))
     baglanti.commit(); baglanti.close()
 
-# --- MAKİNE GARAJI ---
 def sql_makine_ekle(k_adi, makine, plaka, s_bakim, g_saat, periyot):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO makine_garaji (kullanici_adi, makine_adi, plaka, son_bakim_saati, guncel_saat, bakim_periyodu) VALUES (?, ?, ?, ?, ?, ?)", (k_adi, makine, plaka, s_bakim, g_saat, periyot))
@@ -521,7 +533,6 @@ else:
                 if not df_depo.empty:
                     with st.form("mevcut_stok_ekle_formu"):
                         st.write("**Mevcut Ürüne Mal Girişi Yap**")
-                        # HATANIN DÜZELTİLDİĞİ YER: Eşsiz ID'ler üzerinden seçim yapıyoruz
                         stok_secenekleri = df_depo.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist()
                         secili_stok = st.selectbox("Stoğu Artacak Ürün:", stok_secenekleri)
                         m_miktar = st.number_input("Alınan Ek Miktar:", min_value=0.1, step=1.0)
@@ -534,14 +545,11 @@ else:
                         
                         if st.form_submit_button("📥 Stok Artır ve Muhasebeye İşle", use_container_width=True):
                             if m_tedarikci and secili_stok:
-                                # String içerisinden ID'yi ayıklıyoruz
                                 s_id = int(secili_stok.split("|")[0].replace("ID:", "").strip())
-                                # Veritabanındaki eski miktarı tam olarak Float türünde alıyoruz
                                 s_eski_miktar = float(df_depo[df_depo['id'] == s_id].iloc[0]['miktar'])
                                 s_urun_adi = df_depo[df_depo['id'] == s_id].iloc[0]['urun_adi']
                                 s_kategori = df_depo[df_depo['id'] == s_id].iloc[0]['kategori']
                                 
-                                # Kesin Matematiksel Toplama
                                 yeni_miktar = s_eski_miktar + float(m_miktar)
                                 sql_depo_miktar_guncelle(s_id, yeni_miktar)
                                 sql_depo_alim_kaydet(kullanici, s_urun_adi, float(m_miktar), float(m_fiyat), m_tedarikci, str(m_tarih), s_kategori)
@@ -580,11 +588,42 @@ else:
                                 sql_depo_urun_sil(s_id); st.rerun()
                 else: st.info("Deponuz boş.")
                 
+            # YENİ EKLENEN: FATURA (SATIN ALMA) DÜZENLEME MODÜLÜ
             with tab_alim:
                 df_alim = sql_depo_alimlari_getir(kullanici)
                 if not df_alim.empty:
                     df_g_alim = df_alim.rename(columns={"urun_adi":"Ürün", "miktar":"Miktar", "birim_fiyat":"Birim Fiyat(TL)", "toplam_tutar":"Toplam Fatura", "tedarikci":"Tedarikçi", "tarih":"Tarih"})
-                    st.dataframe(df_g_alim, use_container_width=True, hide_index=True)
+                    st.dataframe(df_g_alim[["Ürün", "Miktar", "Birim Fiyat(TL)", "Toplam Fatura", "Tedarikçi", "Tarih"]], use_container_width=True, hide_index=True)
+                    
+                    with st.expander("⚙️ Fatura (Alım Kaydını) Düzenle veya Sil", expanded=False):
+                        st.caption("Not: Buradaki değişiklik faturayı günceller. Eğer bu alım Merkez Ajandasına gider olarak işlendiyse, ajandadan da manuel düzeltmeniz gerekir.")
+                        alim_secenekleri = df_alim.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} ({r['tarih']} - {r['toplam_tutar']} TL)", axis=1).tolist()
+                        secili_fatura = st.selectbox("Düzenlenecek Faturayı Seçin:", alim_secenekleri, key="fatura_guncelle_box")
+                        
+                        if secili_fatura:
+                            f_id = int(secili_fatura.split("|")[0].replace("ID:", "").strip())
+                            fatura_kaydi = df_alim[df_alim['id'] == f_id].iloc[0]
+                            
+                            with st.form("fatura_guncelleme_formu"):
+                                st.write(f"**Güncellenen Ürün:** {fatura_kaydi['urun_adi']}")
+                                col_f1, col_f2 = st.columns(2)
+                                with col_f1:
+                                    y_alim_mik = st.number_input("Miktar:", value=float(fatura_kaydi['miktar']), min_value=0.0)
+                                    y_alim_fiyat = st.number_input("Birim Fiyat (TL):", value=float(fatura_kaydi['birim_fiyat']), min_value=0.0)
+                                with col_f2:
+                                    y_alim_ted = st.text_input("Tedarikçi:", value=fatura_kaydi['tedarikci'])
+                                    try: parsed_tarih = datetime.strptime(fatura_kaydi['tarih'], "%Y-%m-%d").date()
+                                    except: parsed_tarih = datetime.now().date()
+                                    y_alim_tar = st.date_input("Alım Tarihi:", value=parsed_tarih)
+                                    
+                                if st.form_submit_button("💾 Faturayı Güncelle", use_container_width=True):
+                                    sql_depo_alim_guncelle(f_id, y_alim_mik, y_alim_fiyat, y_alim_ted, str(y_alim_tar))
+                                    st.success("Fatura güncellendi!")
+                                    st.rerun()
+                                    
+                            if st.button("🗑️ Faturayı Kalıcı Olarak Sil", type="primary", use_container_width=True):
+                                sql_depo_alim_sil(f_id)
+                                st.rerun()
                 else:
                     st.info("Henüz sisteme kaydedilmiş bir satın alma faturası bulunmuyor.")
 
@@ -780,9 +819,13 @@ else:
                 with st.form(f"f_gorev_{tarla_adi}"):
                     y_kat = st.selectbox("Kategori:", ["Mazot/Yakıt", "Gübre", "Zirai İlaç", "İşçi Yevmiyesi", "Tohum/Fide", "Su/Elektrik", "Amortisman", "Diğer"])
                     y_islem = st.text_input("İşlem Özeti (*):")
-                    st.write("📦 **Depo Kullanımı**")
+                    
+                    st.write("---")
+                    st.write("📦 **Depo Kullanımı (İsteğe Bağlı)**")
                     y_depo_secim = st.selectbox("Stoktan Düşülecek Ürün:", depo_secenekleri)
                     y_depo_miktar = st.number_input("Kullanılan Miktar:", min_value=0.0, step=1.0)
+                    
+                    st.write("---")
                     y_tarih = st.date_input("Tarih:")
                     y_maliyet = st.number_input("İşçilik Tutar (Malzeme depodansa 0 girin) (TL):", min_value=0.0, step=100.0)
                     y_not = st.text_input("Not:", value="Tamamlandı")
