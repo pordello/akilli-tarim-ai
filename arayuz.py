@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + CARİ/BORÇ TAKİBİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + TAKSİTLİ CARİ TAKİBİ)
 # ==============================================================================
 
 import streamlit as st
@@ -144,9 +144,8 @@ def veritabani_otomatik_kur():
         id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, 
         urun_adi TEXT NOT NULL, miktar REAL NOT NULL, birim_fiyat REAL NOT NULL, 
         toplam_tutar REAL NOT NULL, tedarikci TEXT NOT NULL, tarih TEXT NOT NULL,
-        odeme_durumu TEXT DEFAULT 'Peşin / Ödendi', vade_tarihi TEXT DEFAULT '-')""")
+        odeme_durumu TEXT DEFAULT 'Peşin / Ödendi', vade_tarihi TEXT DEFAULT '-', taksit_sayisi INTEGER DEFAULT 1)""")
     
-    # Sütun Güvenlik Kontrolleri
     for kolon in ["alan_m2", "rekolte_kg", "birim_fiyat", "devlet_destegi", "kredi_anapara", "kredi_faiz"]:
         try: kursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN {kolon} REAL DEFAULT 0.0"); baglanti.commit()
         except: pass
@@ -155,11 +154,11 @@ def veritabani_otomatik_kur():
         except: pass
     try: kursor.execute("ALTER TABLE tarla_gunlukleri ADD COLUMN tarla_adi TEXT DEFAULT 'Genel Tarla'"); baglanti.commit()
     except: pass
-    
-    # YENİ CARİ (ÖDEME) SÜTUNLARI
     try: kursor.execute("ALTER TABLE depo_alimlari ADD COLUMN odeme_durumu TEXT DEFAULT 'Peşin / Ödendi'"); baglanti.commit()
     except: pass
     try: kursor.execute("ALTER TABLE depo_alimlari ADD COLUMN vade_tarihi TEXT DEFAULT '-'"); baglanti.commit()
+    except: pass
+    try: kursor.execute("ALTER TABLE depo_alimlari ADD COLUMN taksit_sayisi INTEGER DEFAULT 1"); baglanti.commit()
     except: pass
         
     kursor.execute("SELECT COUNT(*) FROM kullanicilar WHERE kullanici_adi = 'yunus'")
@@ -246,14 +245,13 @@ def sql_depo_urun_ekle(k_adi, urun_adi, kategori, miktar, birim, kritik):
     baglanti.execute("INSERT INTO depo_envanter (kullanici_adi, urun_adi, kategori, miktar, birim, kritik_esik) VALUES (?, ?, ?, ?, ?, ?)", (k_adi, urun_adi, kategori, miktar, birim, kritik))
     baglanti.commit(); baglanti.close()
 
-# YENİ DEPO VE CARİ ALIM
-def sql_depo_alim_kaydet(k_adi, urun_adi, miktar, b_fiyat, tedarikci, tarih, kategori, durum, vade):
+def sql_depo_alim_kaydet(k_adi, urun_adi, miktar, b_fiyat, tedarikci, tarih, kategori, durum, vade, taksit):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
     toplam = miktar * b_fiyat
-    kursor.execute("INSERT INTO depo_alimlari (kullanici_adi, urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih, odeme_durumu, vade_tarihi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                   (k_adi, urun_adi, miktar, b_fiyat, toplam, tedarikci, tarih, durum, vade))
-    notlar = f"Tedarikçi: {tedarikci} | Durum: {durum} | Vade: {vade}"
+    kursor.execute("INSERT INTO depo_alimlari (kullanici_adi, urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih, odeme_durumu, vade_tarihi, taksit_sayisi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                   (k_adi, urun_adi, miktar, b_fiyat, toplam, tedarikci, tarih, durum, vade, taksit))
+    notlar = f"Tedarikçi: {tedarikci} | Durum: {durum} | Vade: {vade} | Taksit: {taksit}"
     islem_turu = f"Mal Alımı: {urun_adi}"
     kursor.execute("INSERT INTO tarim_takvimi (kullanici_adi, tarla_adi, islem_turu, tarih, notlar, maliyet, maliyet_kategorisi) VALUES (?, ?, ?, ?, ?, ?, ?)", 
                    (k_adi, 'Merkezi Depo', islem_turu, tarih, notlar, toplam, kategori))
@@ -261,14 +259,14 @@ def sql_depo_alim_kaydet(k_adi, urun_adi, miktar, b_fiyat, tedarikci, tarih, kat
 
 def sql_depo_alimlari_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    df = pd.read_sql_query("SELECT id, urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih, odeme_durumu, vade_tarihi FROM depo_alimlari WHERE kullanici_adi = ? ORDER BY tarih DESC", baglanti, params=(k_adi,))
+    df = pd.read_sql_query("SELECT id, urun_adi, miktar, birim_fiyat, toplam_tutar, tedarikci, tarih, odeme_durumu, vade_tarihi, taksit_sayisi FROM depo_alimlari WHERE kullanici_adi = ? ORDER BY tarih DESC", baglanti, params=(k_adi,))
     baglanti.close(); return df
 
-def sql_depo_alim_guncelle(alim_id, miktar, b_fiyat, tedarikci, tarih, durum, vade):
+def sql_depo_alim_guncelle(alim_id, miktar, b_fiyat, tedarikci, tarih, durum, vade, taksit):
     baglanti = sqlite3.connect("akilli_tarim.db")
     toplam = miktar * b_fiyat
-    baglanti.execute("UPDATE depo_alimlari SET miktar=?, birim_fiyat=?, toplam_tutar=?, tedarikci=?, tarih=?, odeme_durumu=?, vade_tarihi=? WHERE id=?", 
-                     (miktar, b_fiyat, toplam, tedarikci, tarih, durum, vade, alim_id))
+    baglanti.execute("UPDATE depo_alimlari SET miktar=?, birim_fiyat=?, toplam_tutar=?, tedarikci=?, tarih=?, odeme_durumu=?, vade_tarihi=?, taksit_sayisi=? WHERE id=?", 
+                     (miktar, b_fiyat, toplam, tedarikci, tarih, durum, vade, taksit, alim_id))
     baglanti.commit(); baglanti.close()
 
 def sql_depo_alim_sil(alim_id):
@@ -479,7 +477,7 @@ else:
             else:
                 with st.chat_message("user", avatar="👤"): st.markdown(msj["icerik"])
 
-        if prompt := st.chat_input("Sorunuzu yazın..."):
+        if prompt := st.chat_input("Sorunuzu yazın... / Type here..."):
             st.session_state["chat_gecmisi"].append({"rol": "kullanici", "icerik": prompt})
             with st.chat_message("user", avatar="👤"): st.markdown(prompt)
             with st.chat_message("assistant", avatar="🤖"):
@@ -526,15 +524,21 @@ else:
                     d_fiyat = st.number_input("Birim Alış Fiyatı (TL):", min_value=0.0, step=10.0)
                     d_tedarikci = st.text_input("Tedarikçi Firma (*):")
                     d_odeme = st.selectbox("Ödeme Durumu:", ["Peşin / Ödendi", "Vadeli / Ödenmedi"])
+                    
+                    c_vade1, c_vade2 = st.columns(2)
+                    with c_vade1: d_vade = st.date_input("İlk Vade (Ödeme) Tarihi:")
+                    with c_vade2: d_taksit = st.number_input("Taksit Sayısı:", min_value=1, step=1, value=1)
+                    
                     d_tarih = st.date_input("Fatura/Alım Tarihi:")
-                    d_vade = st.date_input("Vade (Ödeme) Tarihi:")
                     
                     if st.form_submit_button("📦 Depoya ve Muhasebeye İşle", use_container_width=True):
                         if d_urun_adi and d_tedarikci:
                             vade_str = str(d_vade) if d_odeme == "Vadeli / Ödenmedi" else "-"
+                            taksit_val = d_taksit if d_odeme == "Vadeli / Ödenmedi" else 1
+                            
                             sql_depo_urun_ekle(kullanici, d_urun_adi, d_kategori, float(d_miktar), d_birim, float(d_kritik))
                             if d_miktar > 0:
-                                sql_depo_alim_kaydet(kullanici, d_urun_adi, float(d_miktar), float(d_fiyat), d_tedarikci, str(d_tarih), d_kategori, d_odeme, vade_str)
+                                sql_depo_alim_kaydet(kullanici, d_urun_adi, float(d_miktar), float(d_fiyat), d_tedarikci, str(d_tarih), d_kategori, d_odeme, vade_str, taksit_val)
                             st.rerun()
                         else:
                             st.warning("Ürün adı ve Tedarikçi firma zorunludur.")
@@ -552,8 +556,12 @@ else:
                         m_fiyat = st.number_input("Güncel Birim Alış Fiyatı (TL):", min_value=0.0, step=10.0)
                         m_tedarikci = st.text_input("Tedarikçi Firma (*):")
                         m_odeme = st.selectbox("Ödeme Durumu:", ["Peşin / Ödendi", "Vadeli / Ödenmedi"], key="mo")
-                        m_tarih = st.date_input("Fatura/Alım Tarihi:")
-                        m_vade = st.date_input("Vade (Ödeme) Tarihi:", key="mv")
+                        
+                        c_vade3, c_vade4 = st.columns(2)
+                        with c_vade3: m_vade = st.date_input("İlk Vade (Ödeme) Tarihi:", key="mv")
+                        with c_vade4: m_taksit = st.number_input("Taksit Sayısı:", min_value=1, step=1, value=1, key="mtak")
+                        
+                        m_tarih = st.date_input("Fatura/Alım Tarihi:", key="mtar")
                         
                         if st.form_submit_button("📥 Stok Artır ve Muhasebeye İşle", use_container_width=True):
                             if m_tedarikci and secili_stok:
@@ -566,7 +574,9 @@ else:
                                 sql_depo_miktar_guncelle(s_id, yeni_miktar)
                                 
                                 vade_str = str(m_vade) if m_odeme == "Vadeli / Ödenmedi" else "-"
-                                sql_depo_alim_kaydet(kullanici, s_urun_adi, float(m_miktar), float(m_fiyat), m_tedarikci, str(m_tarih), s_kategori, m_odeme, vade_str)
+                                taksit_val = m_taksit if m_odeme == "Vadeli / Ödenmedi" else 1
+                                
+                                sql_depo_alim_kaydet(kullanici, s_urun_adi, float(m_miktar), float(m_fiyat), m_tedarikci, str(m_tarih), s_kategori, m_odeme, vade_str, taksit_val)
                                 st.rerun()
                             else:
                                 st.warning("Tedarikçi firma adı zorunludur.")
@@ -600,17 +610,15 @@ else:
                                 sql_depo_urun_sil(s_id); st.rerun()
                 else: st.info("Deponuz boş.")
                 
-            # YENİ: TARİH FİLTRELİ CARİ / BORÇ / RAPORLAMA MODÜLÜ
             with tab_alim:
                 df_alim_ham = sql_depo_alimlari_getir(kullanici)
                 
                 if not df_alim_ham.empty:
-                    # GELECEK ÖDEMELER / BORÇ TAKİBİ ALANI
                     df_borclar = df_alim_ham[df_alim_ham['odeme_durumu'] == 'Vadeli / Ödenmedi']
                     if not df_borclar.empty:
                         st.error("⏳ **GELECEK ÖDEMELER VE BORÇLAR (Cari Durum)**")
                         for idx, borc in df_borclar.iterrows():
-                            st.warning(f"**Tedarikçi:** {borc['tedarikci']} | **Ürün:** {borc['urun_adi']} | **Borç:** {borc['toplam_tutar']:,.2f} TL | **Son Ödeme (Vade):** {borc['vade_tarihi']}")
+                            st.warning(f"**Tedarikçi:** {borc['tedarikci']} | **Ürün:** {borc['urun_adi']} | **Borç:** {borc['toplam_tutar']:,.2f} TL | **İlk Vade:** {borc['vade_tarihi']} | **Taksit:** {borc['taksit_sayisi']}")
                         st.write("---")
 
                     st.write("**📅 Tarih Aralığına Göre Filtrele ve Raporla**")
@@ -642,10 +650,10 @@ else:
                         <p>İşletme Yetkilisi: <b>{kullanici.upper()}</b> | Raporlanan Tarih Aralığı: <b>{baslangic_tarihi} / {bitis_tarihi}</b></p>
                     </div>
                     <table class="info-table">
-                        <tr><th>Tarih</th><th>Ürün Adı</th><th>Tedarikçi Firma</th><th>Miktar</th><th>Birim Fiyat</th><th>Durum</th><th>Vade</th><th>Tutar</th></tr>
+                        <tr><th>Tarih</th><th>Ürün Adı</th><th>Tedarikçi Firma</th><th>Miktar</th><th>Birim Fiyat</th><th>Durum</th><th>Vade</th><th>Taksit</th><th>Tutar</th></tr>
                     """
                     for idx, r in df_filtreli.iterrows():
-                        html_rapor += f"<tr><td>{r['tarih']}</td><td>{r['urun_adi']}</td><td>{r['tedarikci']}</td><td>{r['miktar']}</td><td>{r['birim_fiyat']:,.2f} TL</td><td>{r['odeme_durumu']}</td><td>{r['vade_tarihi']}</td><td>{r['toplam_tutar']:,.2f} TL</td></tr>"
+                        html_rapor += f"<tr><td>{r['tarih']}</td><td>{r['urun_adi']}</td><td>{r['tedarikci']}</td><td>{r['miktar']}</td><td>{r['birim_fiyat']:,.2f} TL</td><td>{r['odeme_durumu']}</td><td>{r['vade_tarihi']}</td><td>{r['taksit_sayisi']}</td><td>{r['toplam_tutar']:,.2f} TL</td></tr>"
                     
                     html_rapor += f"""
                     </table>
@@ -663,16 +671,19 @@ else:
                     st.write("---")
                     
                     if not df_filtreli.empty:
-                        df_g_alim = df_filtreli.rename(columns={"urun_adi":"Ürün", "miktar":"Miktar", "toplam_tutar":"Tutar(TL)", "tedarikci":"Tedarikçi", "tarih":"Tarih", "odeme_durumu":"Durum", "vade_tarihi":"Vade"})
-                        st.dataframe(df_g_alim[["Tarih", "Ürün", "Miktar", "Tedarikçi", "Tutar(TL)", "Durum", "Vade"]], use_container_width=True, hide_index=True)
+                        df_g_alim = df_filtreli.rename(columns={"urun_adi":"Ürün", "miktar":"Miktar", "toplam_tutar":"Tutar(TL)", "tedarikci":"Tedarikçi", "tarih":"Tarih", "odeme_durumu":"Durum", "vade_tarihi":"Vade", "taksit_sayisi":"Taksit"})
+                        st.dataframe(df_g_alim[["Tarih", "Ürün", "Miktar", "Tedarikçi", "Tutar(TL)", "Durum", "Vade", "Taksit"]], use_container_width=True, hide_index=True)
                     else: st.warning("Bu tarih aralığında veri bulunamadı.")
                     
                     with st.expander("⚙️ Fatura (Alım Kaydını) Düzenle veya Ödeme Yap", expanded=False):
+                        st.caption("Not: Buradaki değişiklik faturayı günceller. Eğer bu alım Merkez Ajandasına işlendiyse, oradan da düzeltmeniz gerekir.")
                         alim_secenekleri = df_alim_ham.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} ({r['tarih']} - {r['toplam_tutar']} TL)", axis=1).tolist()
                         secili_fatura = st.selectbox("Düzenlenecek Faturayı Seçin:", alim_secenekleri, key="fatura_guncelle_box")
+                        
                         if secili_fatura:
                             f_id = int(secili_fatura.split("|")[0].replace("ID:", "").strip())
                             fatura_kaydi = df_alim_ham[df_alim_ham['id'] == f_id].iloc[0]
+                            
                             with st.form("fatura_guncelleme_formu"):
                                 st.write(f"**Güncellenen Ürün:** {fatura_kaydi['urun_adi']}")
                                 col_f1, col_f2 = st.columns(2)
@@ -690,9 +701,13 @@ else:
                                     except: parsed_vade = datetime.now().date()
                                     y_vade_tar = st.date_input("Vade Tarihi:", value=parsed_vade)
                                     
+                                y_alim_taksit = st.number_input("Taksit Sayısı:", value=int(fatura_kaydi['taksit_sayisi']), min_value=1, step=1)
+                                    
                                 if st.form_submit_button("💾 Faturayı Güncelle (Veya Ödeme Yap)", use_container_width=True):
                                     vade_str_g = str(y_vade_tar) if y_od_durum == "Vadeli / Ödenmedi" else "-"
-                                    sql_depo_alim_guncelle(f_id, y_alim_mik, y_alim_fiyat, y_alim_ted, str(y_alim_tar), y_od_durum, vade_str_g)
+                                    taksit_val_g = y_alim_taksit if y_od_durum == "Vadeli / Ödenmedi" else 1
+                                    
+                                    sql_depo_alim_guncelle(f_id, y_alim_mik, y_alim_fiyat, y_alim_ted, str(y_alim_tar), y_od_durum, vade_str_g, taksit_val_g)
                                     st.success("Fatura güncellendi!")
                                     st.rerun()
                                     
