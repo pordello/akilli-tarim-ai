@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + TAKSİTLİ CARİ TAKİBİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + AKILLI TEDARİKÇİ HAFIZASI)
 # ==============================================================================
 
 import streamlit as st
@@ -319,6 +319,17 @@ def sql_makine_sil(m_id):
     baglanti.execute("DELETE FROM makine_garaji WHERE id = ?", (m_id,))
     baglanti.commit(); baglanti.close()
 
+# YENİ: KULLANICININ GEÇMİŞ TEDARİKÇİLERİNİ GETİREN FONKSİYON
+def sql_kullanici_tedarikcileri_getir(k_adi):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    try:
+        df = pd.read_sql_query("SELECT DISTINCT tedarikci FROM depo_alimlari WHERE kullanici_adi = ? AND tedarikci != '' AND tedarikci IS NOT NULL", baglanti, params=(k_adi,))
+        baglanti.close()
+        return df['tedarikci'].tolist()
+    except:
+        baglanti.close()
+        return []
+
 # --- OTURUM VE GİRİŞ EKRANI ---
 if "giris_yapildi" not in st.session_state:
     st.session_state["giris_yapildi"] = False
@@ -496,6 +507,10 @@ else:
         st.markdown("---")
         df_depo = sql_depo_urun_getir(kullanici)
         
+        # Kullanıcının mevcut tedarikçilerini veritabanından çekiyoruz
+        kayitli_tedarikciler = sql_kullanici_tedarikcileri_getir(kullanici)
+        tedarikci_secenekleri_ana = ["-- Yeni Tedarikçi Ekle --"] + kayitli_tedarikciler
+        
         if not df_depo.empty:
             kritik_urunler = df_depo[df_depo['miktar'] <= df_depo['kritik_esik']]
             if not kritik_urunler.empty:
@@ -522,7 +537,14 @@ else:
                     st.write("---")
                     st.write("💰 **Muhasebe & Cari Bilgileri**")
                     d_fiyat = st.number_input("Birim Alış Fiyatı (TL):", min_value=0.0, step=10.0)
-                    d_tedarikci = st.text_input("Tedarikçi Firma (*):")
+                    
+                    # AKILLI TEDARİKÇİ SİSTEMİ
+                    sec_ted_d = st.selectbox("Tedarikçi Firma Seçimi:", tedarikci_secenekleri_ana, key="sec_ted_d")
+                    if sec_ted_d == "-- Yeni Tedarikçi Ekle --":
+                        d_tedarikci = st.text_input("Yeni Tedarikçi Adı (*):", placeholder="Örn: Tarım Kredi Kooperatifi")
+                    else:
+                        d_tedarikci = sec_ted_d
+                        
                     d_odeme = st.selectbox("Ödeme Durumu:", ["Peşin / Ödendi", "Vadeli / Ödenmedi"])
                     
                     c_vade1, c_vade2 = st.columns(2)
@@ -554,7 +576,14 @@ else:
                         st.write("---")
                         st.write("💰 **Muhasebe & Cari Bilgileri**")
                         m_fiyat = st.number_input("Güncel Birim Alış Fiyatı (TL):", min_value=0.0, step=10.0)
-                        m_tedarikci = st.text_input("Tedarikçi Firma (*):")
+                        
+                        # AKILLI TEDARİKÇİ SİSTEMİ
+                        sec_ted_m = st.selectbox("Tedarikçi Firma Seçimi:", tedarikci_secenekleri_ana, key="sec_ted_m")
+                        if sec_ted_m == "-- Yeni Tedarikçi Ekle --":
+                            m_tedarikci = st.text_input("Yeni Tedarikçi Adı (*):", key="yeni_ted_m", placeholder="Örn: Agrotech A.Ş.")
+                        else:
+                            m_tedarikci = sec_ted_m
+                            
                         m_odeme = st.selectbox("Ödeme Durumu:", ["Peşin / Ödendi", "Vadeli / Ödenmedi"], key="mo")
                         
                         c_vade3, c_vade4 = st.columns(2)
@@ -692,7 +721,19 @@ else:
                                     y_alim_fiyat = st.number_input("Birim Fiyat (TL):", value=float(fatura_kaydi['birim_fiyat']), min_value=0.0)
                                     y_od_durum = st.selectbox("Ödeme Durumu:", ["Peşin / Ödendi", "Vadeli / Ödenmedi"], index=0 if fatura_kaydi['odeme_durumu'] == "Peşin / Ödendi" else 1)
                                 with col_f2:
-                                    y_alim_ted = st.text_input("Tedarikçi:", value=fatura_kaydi['tedarikci'])
+                                    # AKILLI TEDARİKÇİ SİSTEMİ (DÜZENLEME EKRANI)
+                                    mevcut_ted = fatura_kaydi['tedarikci']
+                                    secenekler_g = ["-- Yeni Tedarikçi Ekle --"]
+                                    if mevcut_ted not in kayitli_tedarikciler:
+                                        kayitli_tedarikciler.insert(0, mevcut_ted)
+                                    secenekler_g.extend(kayitli_tedarikciler)
+                                    
+                                    sec_ted_g = st.selectbox("Tedarikçi:", secenekler_g, index=secenekler_g.index(mevcut_ted), key=f"sec_ted_g_{f_id}")
+                                    if sec_ted_g == "-- Yeni Tedarikçi Ekle --":
+                                        y_alim_ted = st.text_input("Yeni Tedarikçi Adı:", key=f"yeni_ted_g_{f_id}")
+                                    else:
+                                        y_alim_ted = sec_ted_g
+
                                     try: parsed_tarih = datetime.strptime(fatura_kaydi['tarih'], "%Y-%m-%d").date()
                                     except: parsed_tarih = datetime.now().date()
                                     y_alim_tar = st.date_input("Alım Tarihi:", value=parsed_tarih)
