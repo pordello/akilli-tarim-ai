@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + YÖNETİCİ ONAY SİSTEMİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + EKSİKLER GİDERİLDİ)
 # ==============================================================================
 
 import streamlit as st
@@ -142,31 +142,25 @@ def veritabani_otomatik_kur():
 
 veritabani_otomatik_kur()
 
-# --- YENİ LOGİN FONKSİYONU (YÖNETİCİ ONAY KONTROLÜ İLE) ---
+# --- SQL FONKSİYONLARI ---
 def sql_kullanici_kontrol(k_adi, sifre):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
-    # 1. Önce Yönetici mi diye kontrol et
     kursor.execute("SELECT kullanici_adi FROM kullanicilar WHERE kullanici_adi = ? AND sifre = ?", (k_adi, sifre))
     admin = kursor.fetchone()
     if admin:
         baglanti.close()
         return {"durum": True, "admin_kadi": admin[0], "rol": "Yönetici", "isim": admin[0]}
     
-    # 2. Yönetici değilse, Yetkili Personel mi diye kontrol et
     try:
         kursor.execute("SELECT kullanici_adi, ad_soyad, yetki_rolu, onay_durumu FROM personeller WHERE giris_adi = ? AND sifre = ?", (k_adi, sifre))
         personel = kursor.fetchone()
-    except:
-        personel = None
+    except: personel = None
     baglanti.close()
     
     if personel and personel[2] != "Yok (Sisteme Giremez)":
-        if personel[3] == 0:  # ONAY_DURUMU = 0 ise
-            return {"durum": False, "mesaj": "Hesabınız henüz Yönetici tarafından onaylanmamış! Lütfen sistem yöneticinizle görüşün."}
-        else:
-            return {"durum": True, "admin_kadi": personel[0], "rol": personel[2], "isim": personel[1]}
-    
+        if personel[3] == 0: return {"durum": False, "mesaj": "Hesabınız henüz Yönetici tarafından onaylanmamış! Lütfen sistem yöneticinizle görüşün."}
+        else: return {"durum": True, "admin_kadi": personel[0], "rol": personel[2], "isim": personel[1]}
     return {"durum": False, "mesaj": "Hatalı Giriş! Şifre yanlış veya sisteme giriş yetkiniz yok."}
 
 def sql_kullanicinin_tarlalarini_getir(k_adi):
@@ -198,7 +192,7 @@ def sql_tarla_sil(k_adi, tarla_adi):
     baglanti.execute("DELETE FROM tarla_gunlukleri WHERE kullanici_adi = ? AND tarla_adi = ?", (k_adi, tarla_adi))
     baglanti.commit(); baglanti.close()
 
-# --- DİĞER DB FONKSİYONLARI ---
+# --- TAKVİM & GİDERLER ---
 def sql_takvim_etkinlik_ekle(k_adi, tarla, islem, tarih, notlar, maliyet, kat):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO tarim_takvimi (kullanici_adi, tarla_adi, islem_turu, tarih, notlar, maliyet, maliyet_kategorisi) VALUES (?, ?, ?, ?, ?, ?, ?)", (k_adi, tarla, islem, tarih, notlar, maliyet, kat))
@@ -245,7 +239,6 @@ def sql_cari_sil(c_id):
     baglanti.execute("DELETE FROM cari_hesaplar WHERE id = ?", (c_id,))
     baglanti.commit(); baglanti.close()
 
-# GÜNCELLENDİ: Onay Durumu Eklendi
 def sql_personel_ekle(k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol, onay_durumu):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO personeller (kullanici_adi, ad_soyad, gorev, maas, tel, baslama_tarihi, giris_adi, sifre, yetki_rolu, onay_durumu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol, onay_durumu))
@@ -261,7 +254,6 @@ def sql_personel_sil(p_id):
     baglanti.execute("DELETE FROM personeller WHERE id = ?", (p_id,))
     baglanti.commit(); baglanti.close()
 
-# YENİ EKLENDİ: Yönetici Personeli Onaylar
 def sql_personel_onayla(p_id):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("UPDATE personeller SET onay_durumu = 1 WHERE id = ?", (p_id,))
@@ -447,18 +439,13 @@ else:
     st.sidebar.caption(f"Yetki Grubu: **{aktif_rol}**")
     st.sidebar.markdown("---")
     
-    # ROL BAZLI MENÜ FİLTRELEME (RBAC)
+    # ROL BAZLI MENÜ FİLTRELEME
     tum_menuler = []
-    if aktif_rol == "Yönetici":
-        tum_menuler = [_t("genel_merkez"), _t("genel_muhasebe"), _t("borsa_ekrani"), _t("depo_yonetimi"), _t("makine_garaji"), _t("ai_asistan")] + [t[0] for t in tarlalar_listesi] + [_t("yeni_tarla_ekle")]
-    elif aktif_rol == "Muhasebe & İK":
-        tum_menuler = [_t("genel_merkez"), _t("genel_muhasebe"), _t("borsa_ekrani")]
-    elif aktif_rol == "Depo Sorumlusu":
-        tum_menuler = [_t("depo_yonetimi"), _t("makine_garaji")]
-    elif aktif_rol == "Saha Sorumlusu":
-        tum_menuler = [_t("ai_asistan")] + [t[0] for t in tarlalar_listesi]
-    else:
-        tum_menuler = [_t("ai_asistan")]
+    if aktif_rol == "Yönetici": tum_menuler = [_t("genel_merkez"), _t("genel_muhasebe"), _t("borsa_ekrani"), _t("depo_yonetimi"), _t("makine_garaji"), _t("ai_asistan")] + [t[0] for t in tarlalar_listesi] + [_t("yeni_tarla_ekle")]
+    elif aktif_rol == "Muhasebe & İK": tum_menuler = [_t("genel_merkez"), _t("genel_muhasebe"), _t("borsa_ekrani")]
+    elif aktif_rol == "Depo Sorumlusu": tum_menuler = [_t("depo_yonetimi"), _t("makine_garaji")]
+    elif aktif_rol == "Saha Sorumlusu": tum_menuler = [_t("ai_asistan")] + [t[0] for t in tarlalar_listesi]
+    else: tum_menuler = [_t("ai_asistan")]
     
     aktif_secim = st.sidebar.radio("📌 Menü / Menu", tum_menuler)
     st.sidebar.markdown("---")
@@ -470,9 +457,7 @@ else:
     # ==========================================
     if aktif_secim == _t("genel_muhasebe"):
         st.subheader("📊 Genel Muhasebe, Cari Hesap ve İnsan Kaynakları")
-        st.caption("İşletmenizin cari hesaplarını, personel izinlerini, maaşları ve genel ofis giderlerini buradan yönetin.")
         st.markdown("---")
-        
         tab_cari, tab_personel, tab_gider, tab_fatura = st.tabs(["💳 Cari Hesaplar", "👥 Personel & İzinler", "💸 Diğer Genel Giderler", "🧾 Satın Alma & Borçlar"])
         
         with tab_cari:
@@ -494,7 +479,6 @@ else:
                         sql_cari_sil(int(sil_cari_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
                 else: st.info("Kayıtlı cari hesap bulunmuyor.")
 
-        # --- İK VE PERSONEL (ONAY MEKANİZMASI EKLENDİ) ---
         with tab_personel:
             col_p1, col_p2 = st.columns([1.2, 2.5])
             with col_p1:
@@ -502,65 +486,47 @@ else:
                     st.write("**Yeni Personel İşe Alım**")
                     p_ad = st.text_input("Ad Soyad (*):"); p_gorev = st.text_input("Görevi:"); p_maas = st.number_input("Aylık Net Maaş (TL):", step=500.0)
                     p_tel = st.text_input("Telefon:"); p_bas = st.date_input("İşe Başlama Tarihi:")
-                    
                     st.write("---")
                     st.write("🔐 **Sistem Giriş ve Yetkilendirme**")
-                    st.caption("Eğer bu personele sisteme giriş yetkisi vermek isterseniz doldurun:")
                     p_rol = st.selectbox("Yetki Grubu:", ["Yok (Sisteme Giremez)", "Depo Sorumlusu", "Muhasebe & İK", "Saha Sorumlusu"])
-                    p_g_adi = st.text_input("Sisteme Giriş Adı (Kullanıcı Adı):")
-                    p_sifre = st.text_input("Giriş Şifresi:", type="password")
-                    
+                    p_g_adi = st.text_input("Sisteme Giriş Adı (Kullanıcı Adı):"); p_sifre = st.text_input("Giriş Şifresi:", type="password")
                     if st.form_submit_button("👥 Personeli Kaydet", use_container_width=True):
                         if p_ad:
-                            # EĞER YÖNETİCİ EKLİYORSA DİREKT ONAYLI (1). İK EKLİYORSA VE GİRİŞ YETKİSİ VARSA ONAYSIZ (0) BEKLESİN.
                             onay_durumu = 1 if aktif_rol == "Yönetici" else (0 if p_rol != "Yok (Sisteme Giremez)" else 1)
-                            
                             sql_personel_ekle(kullanici, p_ad, p_gorev, float(p_maas), p_tel, str(p_bas), p_g_adi, p_sifre, p_rol, onay_durumu)
                             sql_cari_ekle(kullanici, p_ad, "Personel", p_tel, 0.0, "Personel Carisi otomatik açıldı.")
-                            
-                            if onay_durumu == 0:
-                                st.info("Personel başarıyla kaydedildi ancak sisteme girişi için YÖNETİCİ ONAYI bekleniyor.")
-                            else:
-                                st.success("Personel eklendi!")
+                            if onay_durumu == 0: st.info("Personel eklendi. Sisteme girişi için YÖNETİCİ ONAYI bekleniyor.")
+                            else: st.success("Personel eklendi!")
                             st.rerun()
                         else: st.warning("Ad Soyad zorunludur.")
-                        
             with col_p2:
                 df_per = sql_personel_getir(kullanici)
                 if not df_per.empty:
-                    st.write("**Mevcut Personel Listesi**")
                     for idx, per in df_per.iterrows():
                         onay_bekliyor = (per.get('onay_durumu', 1) == 0)
                         durum_ikon = "⏳" if onay_bekliyor else "👷"
-                        
                         with st.expander(f"{durum_ikon} {per['ad_soyad']} | {per['gorev']} (Yetki: {per['yetki_rolu']})", expanded=onay_bekliyor):
                             st.write(f"**Tel:** {per['tel']} | **Giriş Adı:** {per['giris_adi'] if per['giris_adi'] else '-'}")
-                            
-                            if onay_bekliyor:
-                                st.error("🚨 Bu personelin sisteme giriş yetkisi **Yönetici Onayı** bekliyor!")
-                            
+                            if onay_bekliyor: st.error("🚨 Bu personelin sisteme giriş yetkisi **Yönetici Onayı** bekliyor!")
                             c_p1, c_p2 = st.columns(2)
                             with c_p1:
                                 if aktif_rol == "Yönetici" and onay_bekliyor:
                                     if st.button(f"✅ Yetkiyi Onayla", key=f"op_{per['id']}", use_container_width=True):
-                                        sql_personel_onayla(per['id']); st.success("Yetki onaylandı!"); st.rerun()
+                                        sql_personel_onayla(per['id']); st.rerun()
                                 else:
                                     if st.button(f"💸 Maaşı Öde ({per['maas']} TL)", key=f"mp_{per['id']}", use_container_width=True):
                                         sql_genel_gider_ekle(kullanici, str(datetime.now().date()), "Personel Maaşı", per['maas'], f"{per['ad_soyad']} - Aylık Maaş"); st.rerun()
                             with c_p2:
                                 if st.button("🗑️ İşten Çıkar (Sil)", key=f"sp_{per['id']}", use_container_width=True, type="primary"):
                                     sql_personel_sil(per['id']); st.rerun()
-                                    
-                    st.write("---"); st.write("**✈️ İzin Yönetimi (Yıllık / Rapor)**")
+                    st.write("---"); st.write("**✈️ İzin Yönetimi**")
                     with st.form("izin_form"):
-                        i_per = st.selectbox("İzne Çıkacak Personel:", df_per['ad_soyad'].tolist())
-                        i_tur = st.selectbox("İzin Türü:", ["Yıllık İzin", "Mazeret İzni", "Hastalık / Rapor", "Ücretsiz İzin"])
+                        i_per = st.selectbox("İzne Çıkacak Personel:", df_per['ad_soyad'].tolist()); i_tur = st.selectbox("İzin Türü:", ["Yıllık İzin", "Mazeret İzni", "Hastalık / Rapor", "Ücretsiz İzin"])
                         c_i1, c_i2 = st.columns(2)
                         with c_i1: i_bas = st.date_input("Başlangıç:")
                         with c_i2: i_bit = st.date_input("Bitiş:")
                         i_not = st.text_input("Açıklama:")
-                        if st.form_submit_button("✈️ İzni İşle"):
-                            sql_izin_ekle(kullanici, i_per, str(i_bas), str(i_bit), i_tur, i_not); st.rerun()
+                        if st.form_submit_button("✈️ İzni İşle"): sql_izin_ekle(kullanici, i_per, str(i_bas), str(i_bit), i_tur, i_not); st.rerun()
                     df_izin = sql_izin_getir(kullanici)
                     if not df_izin.empty: st.dataframe(df_izin.rename(columns={"personel_ad":"Personel", "baslangic":"Başlangıç", "bitis":"Bitiş", "tur":"Tür", "aciklama":"Not"})[["Personel", "Tür", "Başlangıç", "Bitiş", "Not"]], use_container_width=True, hide_index=True)
                 else: st.info("Sistemde personel bulunmuyor.")
@@ -572,16 +538,14 @@ else:
                     g_kat = st.selectbox("Gider Kategorisi:", ["Ofis Kirası", "Fatura (Elektrik/Su/İnternet)", "Muhasebe / Mali Müşavir", "Çay/Kahve/Mutfak", "Vergi/Harç", "Bakım/Onarım", "Diğer"])
                     g_tutar = st.number_input("Tutar (TL):", min_value=0.0, step=100.0); g_tarih = st.date_input("Fatura/Ödeme Tarihi:"); g_not = st.text_input("Açıklama (*):")
                     if st.form_submit_button("💸 Gideri İşle", use_container_width=True):
-                        if g_not and g_tutar > 0:
-                            sql_genel_gider_ekle(kullanici, str(g_tarih), g_kat, float(g_tutar), g_not); st.rerun()
+                        if g_not and g_tutar > 0: sql_genel_gider_ekle(kullanici, str(g_tarih), g_kat, float(g_tutar), g_not); st.rerun()
                         else: st.warning("Tutar ve Açıklama zorunludur.")
             with col_g2:
                 df_giderler = sql_genel_gider_getir(kullanici)
                 if not df_giderler.empty:
                     st.dataframe(df_giderler.rename(columns={"tarih":"Tarih", "kategori":"Kategori", "tutar":"Tutar(TL)", "aciklama":"Açıklama"})[["Tarih", "Kategori", "Tutar(TL)", "Açıklama"]], use_container_width=True, hide_index=True)
                     s_gider_id = st.selectbox("Gider Sil:", df_giderler.apply(lambda r: f"ID:{r['id']} | {r['aciklama']} ({r['tutar']} TL)", axis=1).tolist())
-                    if st.button("🗑️ Seçili Gideri Sil", use_container_width=True):
-                        sql_genel_gider_sil(int(s_gider_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
+                    if st.button("🗑️ Seçili Gideri Sil", use_container_width=True): sql_genel_gider_sil(int(s_gider_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
                 else: st.info("Genel gider bulunmuyor.")
 
         with tab_fatura:
@@ -590,22 +554,18 @@ else:
                 df_borclar = df_alim_ham[df_alim_ham['odeme_durumu'] == 'Vadeli / Ödenmedi']
                 if not df_borclar.empty:
                     st.error("⏳ **GELECEK ÖDEMELER VE BORÇLAR (Cari Durum)**")
-                    for idx, borc in df_borclar.iterrows():
-                        st.warning(f"**Tedarikçi:** {borc['tedarikci']} | **Ürün:** {borc['urun_adi']} | **Borç:** {borc['toplam_tutar']:,.2f} TL | **Vade:** {borc['vade_tarihi']} | **Taksit:** {borc['taksit_sayisi']}")
+                    for idx, borc in df_borclar.iterrows(): st.warning(f"**Tedarikçi:** {borc['tedarikci']} | **Ürün:** {borc['urun_adi']} | **Borç:** {borc['toplam_tutar']:,.2f} TL | **Vade:** {borc['vade_tarihi']} | **Taksit:** {borc['taksit_sayisi']}")
                     st.write("---")
 
-                st.write("**📅 Tarih Aralığına Göre Fatura Raporu Al**")
                 df_alim_ham['tarih_dt'] = pd.to_datetime(df_alim_ham['tarih']).dt.date
                 c_t1, c_t2, c_t3 = st.columns([1, 1, 1])
                 with c_t1: baslangic_tarihi = st.date_input("Başlangıç:", value=df_alim_ham['tarih_dt'].min())
                 with c_t2: bitis_tarihi = st.date_input("Bitiş:", value=datetime.now().date())
-                
                 df_filtreli = df_alim_ham[(df_alim_ham['tarih_dt'] >= baslangic_tarihi) & (df_alim_ham['tarih_dt'] <= bitis_tarihi)]
                 with c_t3: st.metric("Aralık Toplam Fatura", f"₺ {df_filtreli['toplam_tutar'].sum():,.2f}")
                 
                 if not df_filtreli.empty:
                     st.dataframe(df_filtreli.rename(columns={"urun_adi":"Ürün", "miktar":"Miktar", "toplam_tutar":"Tutar(TL)", "tedarikci":"Tedarikçi", "tarih":"Tarih", "odeme_durumu":"Durum", "vade_tarihi":"Vade"})[["Tarih", "Ürün", "Miktar", "Tedarikçi", "Tutar(TL)", "Durum", "Vade"]], use_container_width=True, hide_index=True)
-                    
                     with st.expander("⚙️ Fatura (Alım Kaydını) Düzenle veya Ödeme Yap", expanded=False):
                         alim_secenekleri = df_alim_ham.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} ({r['tarih']} - {r['toplam_tutar']} TL)", axis=1).tolist()
                         secili_fatura = st.selectbox("Düzenlenecek Faturayı Seçin:", alim_secenekleri)
@@ -631,10 +591,10 @@ else:
                                     vade_str_g = str(y_vade_tar) if y_od_durum == "Vadeli / Ödenmedi" else "-"
                                     taksit_val_g = y_alim_taksit if y_od_durum == "Vadeli / Ödenmedi" else 1
                                     sql_depo_alim_guncelle(f_id, y_alim_mik, y_alim_fiyat, y_alim_ted, str(y_alim_tar), y_od_durum, vade_str_g, taksit_val_g)
-                                    st.success("Fatura başarıyla güncellendi!"); st.rerun()
+                                    st.rerun()
                             if st.button("🗑️ Faturayı Kalıcı Olarak Sil", type="primary", use_container_width=True):
                                 sql_depo_alim_sil(f_id); st.rerun()
-            else: st.info("Sistemde satın alma (mal girişi) faturası bulunmuyor. Depo bölümünden alım yapın.")
+            else: st.info("Sistemde satın alma faturası bulunmuyor.")
 
     # ==========================================
     # MODÜL 2: CANLI BORSA EKRANI
@@ -651,26 +611,101 @@ else:
         st.line_chart(pd.DataFrame({'Tarih': tarihler, 'Pamuk': [60, 61.5, 61, 62, 63.5, 63, 64.5], 'Buğday': [9.5, 9.6, 9.8, 9.7, 10.0, 10.1, 10.2]}).set_index('Tarih'))
 
     # ==========================================
-    # MODÜL 3: MAKİNE VE EKİPMAN GARAJI
+    # MODÜL 3: MAKİNE VE EKİPMAN GARAJI (RESTORE EDİLDİ)
     # ==========================================
     elif aktif_secim == _t("makine_garaji"):
         st.subheader("🚜 Makine Garajı, Yakıt ve Muayene Takibi")
         st.markdown("---")
         df_makine = sql_makine_getir(kullanici)
+        
+        if not df_makine.empty:
+            for index, r in df_makine.iterrows():
+                fark = r['guncel_saat'] - r['son_bakim_saati']
+                kalan_saat = r['bakim_periyodu'] - fark
+                if kalan_saat <= 0: st.error(f"🚨 **BAKIM UYARISI:** {r['makine_adi']} ({r['plaka']}) periyodu aşıldı!")
+                elif kalan_saat <= 20: st.warning(f"⚠️ **BAKIM YAKLAŞTI:** {r['makine_adi']} ({r['plaka']}) bakımına **{kalan_saat} saat** kaldı.")
+                try:
+                    muayene_dt = datetime.strptime(r['muayene_tarihi'], "%Y-%m-%d").date()
+                    kalan_gun = (muayene_dt - datetime.now().date()).days
+                    if kalan_gun < 0: st.error(f"🚨 **MUAYENE BİTTİ:** {r['makine_adi']} muayenesi {abs(kalan_gun)} gün GEÇTİ!")
+                    elif kalan_gun <= 30: st.warning(f"⚠️ **MUAYENE YAKLAŞTI:** {r['makine_adi']} muayenesine {kalan_gun} gün kaldı!")
+                except: pass
+            st.markdown("---")
+            
         col_m1, col_m2 = st.columns([1.2, 2.5])
         with col_m1:
             with st.form("yeni_makine_form"):
-                st.write("**Yeni Makine Ekle**")
-                m_adi = st.text_input("Makine Adı:"); m_plaka = st.text_input("Plaka:")
-                m_son_bakim = st.number_input("Son Bakım:", step=10.0); m_guncel = st.number_input("Güncel Saat:", step=10.0)
-                m_periyot = st.number_input("Periyot:", value=250.0); m_muayene = st.date_input("Muayene Tarihi:")
-                if st.form_submit_button("🚜 Garaja Ekle", use_container_width=True) and m_adi:
-                    sql_makine_ekle(kullanici, m_adi, m_plaka, float(m_son_bakim), float(m_guncel), float(m_periyot), str(m_muayene)); st.rerun()
+                st.write("**Yeni Makine/Araç Ekle**")
+                m_adi = st.text_input("Makine Adı (Örn: John Deere):")
+                m_plaka = st.text_input("Plaka / Demirbaş No:")
+                m_son_bakim = st.number_input("Son Bakım Saati:", min_value=0.0, step=10.0)
+                m_guncel = st.number_input("Şu An Motor Saati:", min_value=0.0, step=10.0)
+                m_periyot = st.number_input("Bakım Periyodu (Saat):", min_value=10.0, value=250.0, step=50.0)
+                m_muayene = st.date_input("Muayene Geçerlilik Tarihi:")
+                if st.form_submit_button("🚜 Garaja Ekle", use_container_width=True):
+                    if m_adi and m_plaka:
+                        sql_makine_ekle(kullanici, m_adi, m_plaka, float(m_son_bakim), float(m_guncel), float(m_periyot), str(m_muayene)); st.rerun()
+                    else: st.warning("Ad ve Plaka zorunludur.")
+                        
         with col_m2:
+            st.write("**Garajdaki Araçlar ve Çalışma Durumları**")
             if not df_makine.empty:
+                df_depo_full = sql_depo_urun_getir(kullanici)
                 for idx, r in df_makine.iterrows():
-                    with st.expander(f"⚙️ {r['makine_adi']} | {r['plaka']} ({r['guncel_saat']} Saat)", expanded=False):
-                        st.write(f"Muayene: {r['muayene_tarihi']}")
+                    fark = r['guncel_saat'] - r['son_bakim_saati']
+                    yuzde = min(max(fark / r['bakim_periyodu'], 0.0), 1.0)
+                    with st.expander(f"⚙️ {r['makine_adi']} | {r['plaka']} (Güncel: {r['guncel_saat']} Saat)", expanded=False):
+                        sekme_bakim, sekme_yakit = st.tabs(["🚜 Durum & Bakım", "⛽ Yakıt İkmali"])
+                        with sekme_bakim:
+                            st.write(f"**Son Bakım:** {r['son_bakim_saati']} Saat | **Periyot:** {r['bakim_periyodu']} Saat")
+                            st.progress(yuzde)
+                            st.caption(f"Bakıma Kalan Süre: {max(0, r['bakim_periyodu'] - fark)} saat")
+                            st.write(f"📅 **Muayene Bitiş Tarihi:** {r['muayene_tarihi']}")
+                            st.write("---")
+                            cm1, cm2, cm3 = st.columns(3)
+                            with cm1:
+                                yeni_s = st.number_input("Motor Saati:", value=float(r['guncel_saat']), key=f"s_{r['id']}")
+                                if st.button("⏱️ Saati Güncelle", key=f"b1_{r['id']}", use_container_width=True):
+                                    sql_makine_saat_guncelle(r['id'], yeni_s); st.rerun()
+                                y_mua = st.date_input("Muayene Güncelle:", value=datetime.strptime(r['muayene_tarihi'], "%Y-%m-%d").date() if r['muayene_tarihi'] != '-' else datetime.now().date(), key=f"mua_{r['id']}")
+                                if st.button("📅 Muayene Kaydet", key=f"bm_{r['id']}", use_container_width=True):
+                                    sql_makine_muayene_guncelle(r['id'], str(y_mua)); st.rerun()
+                            with cm2:
+                                if st.button("🔧 Bakım Yapıldı", key=f"b2_{r['id']}", use_container_width=True):
+                                    sql_makine_bakim_yap(r['id'], r['guncel_saat']); st.rerun()
+                            with cm3:
+                                if st.button("🗑️ Aracı Sil", key=f"b3_{r['id']}", type="primary", use_container_width=True):
+                                    sql_makine_sil(r['id']); st.rerun()
+                        with sekme_yakit:
+                            st.write("**Yakıt Depodan Düşülecektir (Sadece Mazot/Yakıt kategorisi)**")
+                            if not df_depo_full.empty:
+                                mazotlar = df_depo_full[df_depo_full['kategori'] == 'Mazot/Yakıt']
+                                if not mazotlar.empty:
+                                    mazot_liste = ["-- Depo Seç --"] + mazotlar.apply(lambda row: f"ID:{row['id']} | {row['urun_adi']} (Kalan: {row['miktar']} L)", axis=1).tolist()
+                                    with st.form(f"yakit_form_{r['id']}"):
+                                        cy1, cy2 = st.columns(2)
+                                        with cy1: y_depo_sec = st.selectbox("Yakıt Deposu:", mazot_liste)
+                                        with cy2: y_litre = st.number_input("Alınan Litre:", min_value=0.1, step=10.0)
+                                        y_tarih_yakit = st.date_input("Tarih:")
+                                        y_not_yakit = st.text_input("Görev Notu:")
+                                        if st.form_submit_button("⛽ Yakıtı İşle ve Stoktan Düş", use_container_width=True):
+                                            if y_depo_sec != "-- Depo Seç --" and y_litre > 0:
+                                                depo_id = int(y_depo_sec.split("|")[0].replace("ID:", "").strip())
+                                                mevcut_litre = float(df_depo_full[df_depo_full['id'] == depo_id].iloc[0]['miktar'])
+                                                if mevcut_litre >= y_litre:
+                                                    sql_depo_miktar_guncelle(depo_id, mevcut_litre - y_litre)
+                                                    sql_makine_yakit_ekle(kullanici, r['id'], r['makine_adi'], str(y_tarih_yakit), y_litre, y_not_yakit)
+                                                    st.success("Yakıt başarıyla eklendi ve depodan düşüldü!"); st.rerun()
+                                                else: st.error("Depoda yeterli yakıt yok!")
+                                            else: st.warning("Geçerli bir depo ve litre giriniz.")
+                                else: st.info("Depoda 'Mazot/Yakıt' bulunamadı. Lütfen önce depoya yakıt satın alın.")
+                            else: st.info("Depo tamamen boş.")
+                            st.write("---")
+                            st.write("📋 **Son Yakıt Alım Geçmişi**")
+                            df_yakit_gecmisi = sql_makine_yakit_getir(kullanici, r['id'])
+                            if not df_yakit_gecmisi.empty:
+                                st.dataframe(df_yakit_gecmisi.rename(columns={"tarih":"Tarih", "miktar_litre":"Litre", "islem_notu":"Açıklama"}), use_container_width=True, hide_index=True)
+                            else: st.caption("Henüz yakıt kaydı yok.")
             else: st.info("Garajınız boş.")
 
     # ==========================================
@@ -771,7 +806,7 @@ else:
         net = t_gelir + t_destek - t_gider - t_kredi
         rc1, rc2, rc3, rc4 = st.columns(4)
         rc1.metric("Toplam Gelir+Destek", f"₺ {(t_gelir + t_destek):,.2f}")
-        rc2.metric("Toplam Şirket Gideri", f"₺ {t_gider:,.2f}", help="Tarlalar + Merkezi Depo + Personel + Genel Giderler")
+        rc2.metric("Toplam Şirket Gideri", f"₺ {t_gider:,.2f}", help="Tarlalar + Merkezi Depo + Personel + Genel Gider")
         rc3.metric("Banka Ödemeleri", f"₺ {t_kredi:,.2f}")
         rc4.metric("İşletme Net Kârı", f"₺ {net:,.2f}", delta="Kârlı" if net > 0 else "Zarar")
         st.write("---")
@@ -806,7 +841,7 @@ else:
             else: st.info("Sistemde kayıtlı tarla bulunmuyor.")
 
     # ==========================================
-    # 7. TARLA DETAY PANELİ (TÜM ÖZELLİKLERİYLE EKSİKSİZ)
+    # 7. TARLA DETAY PANELİ (GÜVENLİK YAMALI)
     # ==========================================
     else:
         aktif_t = next((t for t in tarlalar_listesi if t[0] == aktif_secim), None)
@@ -816,6 +851,7 @@ else:
             st.subheader(f"{_t('baslik')} | {tarla_adi.upper()}")
             st.caption(f"Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
             
+            # FİNANS AYARLARINI SADECE YÖNETİCİ VE MUHASEBECİ GÖREBİLİR
             if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                 col_ayarlar, col_finans = st.columns(2)
                 with col_ayarlar:
@@ -852,6 +888,7 @@ else:
                                 st.rerun()
                 st.markdown("---")
 
+            # --- SENSÖRLER VE HARİTA (HERKES GÖREBİLİR) ---
             if "aktif_tarla_nemi" not in st.session_state or st.session_state.get("secili_tarla") != tarla_adi:
                 st.session_state["aktif_tarla_nemi"] = akilli_nem_simulasyonu()
                 st.session_state["aktif_tarla_sicaklik"] = gercek_hava_durumu_getir(t_enlem, t_boylam) or random.randint(22, 38)
@@ -885,6 +922,7 @@ else:
 
             st.markdown("---")
 
+            # FİNANS SİMÜLATÖRÜ SADECE YÖNETİCİ VE MUHASEBECİYE GÖSTERİLİR
             df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici, tarla_adi)
             if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                 st.subheader(f"💼 Dijital Finans & Risk Yönetimi", divider="orange")
@@ -925,6 +963,7 @@ else:
                         st.success(f"Fiyat **{sim_fiyat} TL** olursa net kâr: **{((rekolte_kg * sim_fiyat) + devlet_destegi - toplam_gider - toplam_kredi_maliyeti):,.0f} TL**")
                 st.markdown("---")
             
+            # AJANDA KISMINI HERKES GÖREBİLİR (SAHA MÜHENDİSİ DAHİL)
             st.subheader(_t("ajanda_baslik"), divider="gray")
             df_depo_anlik = sql_depo_urun_getir(kullanici)
             depo_secenekleri = ["-- Depodan Ürün Kullanma --"] + (df_depo_anlik.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist() if not df_depo_anlik.empty else [])
@@ -942,6 +981,7 @@ else:
                     
                     st.write("---")
                     y_tarih = st.date_input("Tarih:")
+                    # Eğer personel ise parasal işlem giremesin (Sadece işlemi ve depodan düşümü kaydetsin)
                     if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                         y_maliyet = st.number_input("İşçilik/Ek Maliyet (TL):", min_value=0.0, step=100.0)
                     else:
@@ -969,9 +1009,11 @@ else:
                     df_g = df_takvim_ham.rename(columns={"maliyet_kategorisi":"Kategori", "islem_turu":"İşlem", "tarih":"Tarih", "maliyet":"Tutar(TL)", "notlar":"Durum"})
                     if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                         st.dataframe(df_g[["Kategori", "İşlem", "Tarih", "Tutar(TL)", "Durum"]], use_container_width=True, hide_index=True)
+                        
+                        # GÜVENLİK YAMASI: Kayıt Silme İşlemini Sadece Yetkililer Yapabilir
+                        sildi_id = st.selectbox("Silinecek Kayıt:", df_takvim_ham.apply(lambda r: f"ID:{r['id']} | {r['islem_turu']} ({r['maliyet']} TL)", axis=1).tolist())
+                        if st.button("🗑️ Kaydı Sil", use_container_width=True):
+                            sql_takvim_etkinlik_sil(int(sildi_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
                     else:
                         st.dataframe(df_g[["Kategori", "İşlem", "Tarih", "Durum"]], use_container_width=True, hide_index=True)
-                        
-                    sildi_id = st.selectbox("Silinecek Kayıt:", df_takvim_ham.apply(lambda r: f"ID:{r['id']} | {r['islem_turu']} ({r['maliyet']} TL)", axis=1).tolist())
-                    if st.button("🗑️ Kaydı Sil", use_container_width=True):
-                        sql_takvim_etkinlik_sil(int(sildi_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
+                        st.caption("🔒 Ajanda kayıtlarını silme yetkiniz bulunmamaktadır.")
