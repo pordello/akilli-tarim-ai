@@ -1,5 +1,5 @@
 # ==============================================================================
-# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + ROL/YETKİLENDİRME SİSTEMİ)
+# PROJE: AI Destekli Akıllı Tarım Platformu (TAM SÜRÜM + YÖNETİCİ ONAY SİSTEMİ)
 # ==============================================================================
 
 import streamlit as st
@@ -122,7 +122,7 @@ def veritabani_otomatik_kur():
     kursor.execute("""CREATE TABLE IF NOT EXISTS depo_alimlari (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, urun_adi TEXT NOT NULL, miktar REAL NOT NULL, birim_fiyat REAL NOT NULL, toplam_tutar REAL NOT NULL, tedarikci TEXT NOT NULL, tarih TEXT NOT NULL, odeme_durumu TEXT DEFAULT 'Peşin / Ödendi', vade_tarihi TEXT DEFAULT '-', taksit_sayisi INTEGER DEFAULT 1)""")
     kursor.execute("""CREATE TABLE IF NOT EXISTS makine_yakit_gecmisi (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, makine_id INTEGER NOT NULL, makine_adi TEXT NOT NULL, tarih TEXT NOT NULL, miktar_litre REAL NOT NULL, islem_notu TEXT)""")
     kursor.execute("""CREATE TABLE IF NOT EXISTS cari_hesaplar (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, unvan TEXT NOT NULL, tip TEXT NOT NULL, tel TEXT, bakiye REAL DEFAULT 0.0, aciklama TEXT)""")
-    kursor.execute("""CREATE TABLE IF NOT EXISTS personeller (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, ad_soyad TEXT NOT NULL, gorev TEXT NOT NULL, maas REAL NOT NULL, tel TEXT, baslama_tarihi TEXT, giris_adi TEXT DEFAULT '', sifre TEXT DEFAULT '', yetki_rolu TEXT DEFAULT 'Yok (Sisteme Giremez)')""")
+    kursor.execute("""CREATE TABLE IF NOT EXISTS personeller (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, ad_soyad TEXT NOT NULL, gorev TEXT NOT NULL, maas REAL NOT NULL, tel TEXT, baslama_tarihi TEXT, giris_adi TEXT DEFAULT '', sifre TEXT DEFAULT '', yetki_rolu TEXT DEFAULT 'Yok (Sisteme Giremez)', onay_durumu INTEGER DEFAULT 1)""")
     kursor.execute("""CREATE TABLE IF NOT EXISTS personel_izinleri (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, personel_ad TEXT NOT NULL, baslangic TEXT NOT NULL, bitis TEXT NOT NULL, tur TEXT NOT NULL, aciklama TEXT)""")
     kursor.execute("""CREATE TABLE IF NOT EXISTS genel_giderler (id INTEGER PRIMARY KEY AUTOINCREMENT, kullanici_adi TEXT NOT NULL, tarih TEXT NOT NULL, kategori TEXT NOT NULL, tutar REAL NOT NULL, aciklama TEXT)""")
     
@@ -130,15 +130,7 @@ def veritabani_otomatik_kur():
     for kolon in ["alan_m2", "rekolte_kg", "birim_fiyat", "devlet_destegi", "kredi_anapara", "kredi_faiz"]:
         try: kursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN {kolon} REAL DEFAULT 0.0"); baglanti.commit()
         except: pass
-    for t_kolon in ["tarla_adi", "maliyet", "maliyet_kategorisi"]:
-        try: kursor.execute(f"ALTER TABLE tarim_takvimi ADD COLUMN {t_kolon} TEXT DEFAULT 'Diğer'"); baglanti.commit()
-        except: pass
-        
-    try: kursor.execute("ALTER TABLE personeller ADD COLUMN giris_adi TEXT DEFAULT ''"); baglanti.commit()
-    except: pass
-    try: kursor.execute("ALTER TABLE personeller ADD COLUMN sifre TEXT DEFAULT ''"); baglanti.commit()
-    except: pass
-    try: kursor.execute("ALTER TABLE personeller ADD COLUMN yetki_rolu TEXT DEFAULT 'Yok (Sisteme Giremez)'"); baglanti.commit()
+    try: kursor.execute("ALTER TABLE personeller ADD COLUMN onay_durumu INTEGER DEFAULT 1"); baglanti.commit()
     except: pass
         
     kursor.execute("SELECT COUNT(*) FROM kullanicilar WHERE kullanici_adi = 'yunus'")
@@ -150,7 +142,7 @@ def veritabani_otomatik_kur():
 
 veritabani_otomatik_kur()
 
-# --- YENİ LOGİN FONKSİYONU (YÖNETİCİ + PERSONEL KONTROLÜ) ---
+# --- YENİ LOGİN FONKSİYONU (YÖNETİCİ ONAY KONTROLÜ İLE) ---
 def sql_kullanici_kontrol(k_adi, sifre):
     baglanti = sqlite3.connect("akilli_tarim.db")
     kursor = baglanti.cursor()
@@ -162,13 +154,20 @@ def sql_kullanici_kontrol(k_adi, sifre):
         return {"durum": True, "admin_kadi": admin[0], "rol": "Yönetici", "isim": admin[0]}
     
     # 2. Yönetici değilse, Yetkili Personel mi diye kontrol et
-    kursor.execute("SELECT kullanici_adi, ad_soyad, yetki_rolu FROM personeller WHERE giris_adi = ? AND sifre = ?", (k_adi, sifre))
-    personel = kursor.fetchone()
+    try:
+        kursor.execute("SELECT kullanici_adi, ad_soyad, yetki_rolu, onay_durumu FROM personeller WHERE giris_adi = ? AND sifre = ?", (k_adi, sifre))
+        personel = kursor.fetchone()
+    except:
+        personel = None
     baglanti.close()
-    if personel and personel[2] != "Yok (Sisteme Giremez)":
-        return {"durum": True, "admin_kadi": personel[0], "rol": personel[2], "isim": personel[1]}
     
-    return {"durum": False}
+    if personel and personel[2] != "Yok (Sisteme Giremez)":
+        if personel[3] == 0:  # ONAY_DURUMU = 0 ise
+            return {"durum": False, "mesaj": "Hesabınız henüz Yönetici tarafından onaylanmamış! Lütfen sistem yöneticinizle görüşün."}
+        else:
+            return {"durum": True, "admin_kadi": personel[0], "rol": personel[2], "isim": personel[1]}
+    
+    return {"durum": False, "mesaj": "Hatalı Giriş! Şifre yanlış veya sisteme giriş yetkiniz yok."}
 
 def sql_kullanicinin_tarlalarini_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
@@ -230,7 +229,7 @@ def sql_analizleri_getir(k_adi, tarla):
     df = pd.read_sql_query("SELECT nem, sicaklik, karar, tarih FROM tarla_gunlukleri WHERE kullanici_adi = ? AND tarla_adi = ? ORDER BY id DESC LIMIT 50", baglanti, params=(k_adi, tarla))
     baglanti.close(); return df
 
-# --- MUHASEBE / İK / CARİ FONKSİYONLARI (GÜNCELLENDİ) ---
+# --- MUHASEBE / İK / CARİ FONKSİYONLARI ---
 def sql_cari_ekle(k_adi, unvan, tip, tel, bakiye, aciklama):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO cari_hesaplar (kullanici_adi, unvan, tip, tel, bakiye, aciklama) VALUES (?, ?, ?, ?, ?, ?)", (k_adi, unvan, tip, tel, bakiye, aciklama))
@@ -246,19 +245,26 @@ def sql_cari_sil(c_id):
     baglanti.execute("DELETE FROM cari_hesaplar WHERE id = ?", (c_id,))
     baglanti.commit(); baglanti.close()
 
-def sql_personel_ekle(k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol):
+# GÜNCELLENDİ: Onay Durumu Eklendi
+def sql_personel_ekle(k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol, onay_durumu):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    baglanti.execute("INSERT INTO personeller (kullanici_adi, ad_soyad, gorev, maas, tel, baslama_tarihi, giris_adi, sifre, yetki_rolu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol))
+    baglanti.execute("INSERT INTO personeller (kullanici_adi, ad_soyad, gorev, maas, tel, baslama_tarihi, giris_adi, sifre, yetki_rolu, onay_durumu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (k_adi, ad, gorev, maas, tel, baslama, g_adi, sifre, rol, onay_durumu))
     baglanti.commit(); baglanti.close()
 
 def sql_personel_getir(k_adi):
     baglanti = sqlite3.connect("akilli_tarim.db")
-    df = pd.read_sql_query("SELECT id, ad_soyad, gorev, maas, tel, baslama_tarihi, giris_adi, yetki_rolu FROM personeller WHERE kullanici_adi = ?", baglanti, params=(k_adi,))
+    df = pd.read_sql_query("SELECT id, ad_soyad, gorev, maas, tel, baslama_tarihi, giris_adi, yetki_rolu, onay_durumu FROM personeller WHERE kullanici_adi = ?", baglanti, params=(k_adi,))
     baglanti.close(); return df
 
 def sql_personel_sil(p_id):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("DELETE FROM personeller WHERE id = ?", (p_id,))
+    baglanti.commit(); baglanti.close()
+
+# YENİ EKLENDİ: Yönetici Personeli Onaylar
+def sql_personel_onayla(p_id):
+    baglanti = sqlite3.connect("akilli_tarim.db")
+    baglanti.execute("UPDATE personeller SET onay_durumu = 1 WHERE id = ?", (p_id,))
     baglanti.commit(); baglanti.close()
 
 def sql_izin_ekle(k_adi, personel, bas, bit, tur, aciklama):
@@ -287,6 +293,7 @@ def sql_genel_gider_sil(g_id):
     baglanti.execute("DELETE FROM genel_giderler WHERE id = ?", (g_id,))
     baglanti.commit(); baglanti.close()
 
+# --- DEPO & SATIN ALMA FONKSİYONLARI ---
 def sql_depo_urun_ekle(k_adi, urun_adi, kategori, miktar, birim, kritik):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO depo_envanter (kullanici_adi, urun_adi, kategori, miktar, birim, kritik_esik) VALUES (?, ?, ?, ?, ?, ?)", (k_adi, urun_adi, kategori, miktar, birim, kritik))
@@ -341,6 +348,7 @@ def sql_kullanici_tedarikcileri_getir(k_adi):
         baglanti.close(); return df['tedarikci'].tolist()
     except: baglanti.close(); return []
 
+# --- MAKİNE VE YAKIT FONKSİYONLARI ---
 def sql_makine_ekle(k_adi, makine, plaka, s_bakim, g_saat, periyot, muayene):
     baglanti = sqlite3.connect("akilli_tarim.db")
     baglanti.execute("INSERT INTO makine_garaji (kullanici_adi, makine_adi, plaka, son_bakim_saati, guncel_saat, bakim_periyodu, muayene_tarihi) VALUES (?, ?, ?, ?, ?, ?, ?)", (k_adi, makine, plaka, s_bakim, g_saat, periyot, muayene))
@@ -408,7 +416,7 @@ if not st.session_state["giris_yapildi"]:
                     st.session_state["rol"] = giris_sonucu["rol"]
                     st.session_state["isim"] = giris_sonucu["isim"]
                     st.rerun()
-                else: st.error("Hatalı Giriş! Şifre yanlış veya yetkiniz yok.")
+                else: st.error(giris_sonucu.get("mesaj", "Hatalı Giriş! Şifre yanlış veya yetkiniz yok."))
                     
         with sekme_kayit:
             with st.form("yeni_kayit_formu"):
@@ -450,7 +458,7 @@ else:
     elif aktif_rol == "Saha Sorumlusu":
         tum_menuler = [_t("ai_asistan")] + [t[0] for t in tarlalar_listesi]
     else:
-        tum_menuler = [_t("ai_asistan")] # Hata durumunda sadece asistan görsün
+        tum_menuler = [_t("ai_asistan")]
     
     aktif_secim = st.sidebar.radio("📌 Menü / Menu", tum_menuler)
     st.sidebar.markdown("---")
@@ -462,7 +470,9 @@ else:
     # ==========================================
     if aktif_secim == _t("genel_muhasebe"):
         st.subheader("📊 Genel Muhasebe, Cari Hesap ve İnsan Kaynakları")
+        st.caption("İşletmenizin cari hesaplarını, personel izinlerini, maaşları ve genel ofis giderlerini buradan yönetin.")
         st.markdown("---")
+        
         tab_cari, tab_personel, tab_gider, tab_fatura = st.tabs(["💳 Cari Hesaplar", "👥 Personel & İzinler", "💸 Diğer Genel Giderler", "🧾 Satın Alma & Borçlar"])
         
         with tab_cari:
@@ -484,9 +494,9 @@ else:
                         sql_cari_sil(int(sil_cari_id.split("|")[0].replace("ID:", "").strip())); st.rerun()
                 else: st.info("Kayıtlı cari hesap bulunmuyor.")
 
-        # İK VE PERSONEL YETKİLENDİRME PANELİ
+        # --- İK VE PERSONEL (ONAY MEKANİZMASI EKLENDİ) ---
         with tab_personel:
-            col_p1, col_p2 = st.columns([1.2, 2])
+            col_p1, col_p2 = st.columns([1.2, 2.5])
             with col_p1:
                 with st.form("per_ekle"):
                     st.write("**Yeni Personel İşe Alım**")
@@ -502,22 +512,45 @@ else:
                     
                     if st.form_submit_button("👥 Personeli Kaydet", use_container_width=True):
                         if p_ad:
-                            sql_personel_ekle(kullanici, p_ad, p_gorev, float(p_maas), p_tel, str(p_bas), p_g_adi, p_sifre, p_rol)
-                            sql_cari_ekle(kullanici, p_ad, "Personel", p_tel, 0.0, "Personel Carisi otomatik açıldı."); st.rerun()
+                            # EĞER YÖNETİCİ EKLİYORSA DİREKT ONAYLI (1). İK EKLİYORSA VE GİRİŞ YETKİSİ VARSA ONAYSIZ (0) BEKLESİN.
+                            onay_durumu = 1 if aktif_rol == "Yönetici" else (0 if p_rol != "Yok (Sisteme Giremez)" else 1)
+                            
+                            sql_personel_ekle(kullanici, p_ad, p_gorev, float(p_maas), p_tel, str(p_bas), p_g_adi, p_sifre, p_rol, onay_durumu)
+                            sql_cari_ekle(kullanici, p_ad, "Personel", p_tel, 0.0, "Personel Carisi otomatik açıldı.")
+                            
+                            if onay_durumu == 0:
+                                st.info("Personel başarıyla kaydedildi ancak sisteme girişi için YÖNETİCİ ONAYI bekleniyor.")
+                            else:
+                                st.success("Personel eklendi!")
+                            st.rerun()
                         else: st.warning("Ad Soyad zorunludur.")
+                        
             with col_p2:
                 df_per = sql_personel_getir(kullanici)
                 if not df_per.empty:
+                    st.write("**Mevcut Personel Listesi**")
                     for idx, per in df_per.iterrows():
-                        with st.expander(f"👷 {per['ad_soyad']} | {per['gorev']} (Yetki: {per['yetki_rolu']})", expanded=False):
+                        onay_bekliyor = (per.get('onay_durumu', 1) == 0)
+                        durum_ikon = "⏳" if onay_bekliyor else "👷"
+                        
+                        with st.expander(f"{durum_ikon} {per['ad_soyad']} | {per['gorev']} (Yetki: {per['yetki_rolu']})", expanded=onay_bekliyor):
                             st.write(f"**Tel:** {per['tel']} | **Giriş Adı:** {per['giris_adi'] if per['giris_adi'] else '-'}")
+                            
+                            if onay_bekliyor:
+                                st.error("🚨 Bu personelin sisteme giriş yetkisi **Yönetici Onayı** bekliyor!")
+                            
                             c_p1, c_p2 = st.columns(2)
                             with c_p1:
-                                if st.button(f"💸 Maaşı Öde ({per['maas']} TL)", key=f"mp_{per['id']}", use_container_width=True):
-                                    sql_genel_gider_ekle(kullanici, str(datetime.now().date()), "Personel Maaşı", per['maas'], f"{per['ad_soyad']} - Aylık Maaş"); st.rerun()
+                                if aktif_rol == "Yönetici" and onay_bekliyor:
+                                    if st.button(f"✅ Yetkiyi Onayla", key=f"op_{per['id']}", use_container_width=True):
+                                        sql_personel_onayla(per['id']); st.success("Yetki onaylandı!"); st.rerun()
+                                else:
+                                    if st.button(f"💸 Maaşı Öde ({per['maas']} TL)", key=f"mp_{per['id']}", use_container_width=True):
+                                        sql_genel_gider_ekle(kullanici, str(datetime.now().date()), "Personel Maaşı", per['maas'], f"{per['ad_soyad']} - Aylık Maaş"); st.rerun()
                             with c_p2:
                                 if st.button("🗑️ İşten Çıkar (Sil)", key=f"sp_{per['id']}", use_container_width=True, type="primary"):
                                     sql_personel_sil(per['id']); st.rerun()
+                                    
                     st.write("---"); st.write("**✈️ İzin Yönetimi (Yıllık / Rapor)**")
                     with st.form("izin_form"):
                         i_per = st.selectbox("İzne Çıkacak Personel:", df_per['ad_soyad'].tolist())
@@ -697,13 +730,11 @@ else:
                         if st.form_submit_button("📥 Stok Artır ve Muhasebeye İşle", use_container_width=True):
                             if m_tedarikci and secili_stok:
                                 s_id = int(secili_stok.split("|")[0].replace("ID:", "").strip())
-                                s_eski_miktar = float(df_depo[df_depo['id'] == s_id].iloc[0]['miktar'])
-                                s_urun_adi = df_depo[df_depo['id'] == s_id].iloc[0]['urun_adi']
-                                s_kategori = df_depo[df_depo['id'] == s_id].iloc[0]['kategori']
-                                sql_depo_miktar_guncelle(s_id, s_eski_miktar + float(m_miktar))
+                                s_eski = float(df_depo[df_depo['id'] == s_id].iloc[0]['miktar'])
+                                sql_depo_miktar_guncelle(s_id, s_eski + float(m_miktar))
                                 vade_str = str(m_vade) if m_odeme == "Vadeli / Ödenmedi" else "-"
                                 taksit_val = m_taksit if m_odeme == "Vadeli / Ödenmedi" else 1
-                                sql_depo_alim_kaydet(kullanici, s_urun_adi, float(m_miktar), float(m_fiyat), m_tedarikci, str(m_tarih), s_kategori, m_odeme, vade_str, taksit_val)
+                                sql_depo_alim_kaydet(kullanici, df_depo[df_depo['id'] == s_id].iloc[0]['urun_adi'], float(m_miktar), float(m_fiyat), m_tedarikci, str(m_tarih), df_depo[df_depo['id'] == s_id].iloc[0]['kategori'], m_odeme, vade_str, taksit_val)
                                 st.rerun()
                             else: st.warning("Tedarikçi adı zorunludur.")
                 else: st.info("Önce 'Yeni Ürün Tanımla' sekmesinden ürün ekleyin.")
@@ -712,19 +743,6 @@ else:
             st.write("**📊 Mevcut Depo Envanteri**")
             if not df_depo.empty:
                 st.dataframe(df_depo.rename(columns={"urun_adi":"Ürün", "kategori":"Kategori", "miktar":"Miktar", "birim":"Birim"})[["Ürün", "Kategori", "Miktar", "Birim"]], use_container_width=True, hide_index=True)
-                with st.expander("⚙️ Stok Bilgilerini Düzenle / Sil", expanded=False):
-                    stok_sec = df_depo.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']}", axis=1).tolist()
-                    g_stok = st.selectbox("Ürün Seçin:", stok_sec, key="gbox")
-                    if g_stok:
-                        s_id = int(g_stok.split("|")[0].replace("ID:", "").strip())
-                        s_urun = df_depo[df_depo['id'] == s_id].iloc[0]
-                        with st.form("st_guncelle"):
-                            c1, c2 = st.columns(2)
-                            with c1: y_ad = st.text_input("Adı:", value=s_urun['urun_adi']); y_mik = st.number_input("Miktar:", value=float(s_urun['miktar']))
-                            with c2: y_kat = st.selectbox("Kategori:", ["Zirai İlaç", "Gübre", "Tohum/Fide", "Mazot/Yakıt", "Ambalaj", "Diğer"], index=0); y_birim = st.selectbox("Birim:", ["kg", "Litre", "Torba", "Adet", "Ton"], index=0)
-                            y_kritik = st.number_input("Kritik Eşik:", value=float(s_urun['kritik_esik']))
-                            if st.form_submit_button("💾 Kaydet", use_container_width=True): sql_depo_urun_tam_guncelle(s_id, y_ad, y_kat, y_mik, y_birim, y_kritik); st.rerun()
-                        if st.button("🗑️ Ürünü Kalıcı Olarak Sil", type="primary", use_container_width=True): sql_depo_urun_sil(s_id); st.rerun()
             else: st.info("Deponuz boş.")
 
     # ==========================================
@@ -798,7 +816,6 @@ else:
             st.subheader(f"{_t('baslik')} | {tarla_adi.upper()}")
             st.caption(f"Ada/Parsel: {ada}/{parsel} | Büyüklük: {alan_m2:,.0f} m² | Mahsul: {urun_turu}")
             
-            # FİNANS AYARLARINI SADECE YÖNETİCİ VE MUHASEBECİ GÖREBİLİR
             if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                 col_ayarlar, col_finans = st.columns(2)
                 with col_ayarlar:
@@ -835,7 +852,6 @@ else:
                                 st.rerun()
                 st.markdown("---")
 
-            # --- SENSÖRLER VE HARİTA (HERKES GÖREBİLİR) ---
             if "aktif_tarla_nemi" not in st.session_state or st.session_state.get("secili_tarla") != tarla_adi:
                 st.session_state["aktif_tarla_nemi"] = akilli_nem_simulasyonu()
                 st.session_state["aktif_tarla_sicaklik"] = gercek_hava_durumu_getir(t_enlem, t_boylam) or random.randint(22, 38)
@@ -869,7 +885,6 @@ else:
 
             st.markdown("---")
 
-            # FİNANS SİMÜLATÖRÜ SADECE YÖNETİCİ VE MUHASEBECİYE GÖSTERİLİR
             df_takvim_ham = sql_takvim_verileri_getir_ham(kullanici, tarla_adi)
             if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                 st.subheader(f"💼 Dijital Finans & Risk Yönetimi", divider="orange")
@@ -910,7 +925,6 @@ else:
                         st.success(f"Fiyat **{sim_fiyat} TL** olursa net kâr: **{((rekolte_kg * sim_fiyat) + devlet_destegi - toplam_gider - toplam_kredi_maliyeti):,.0f} TL**")
                 st.markdown("---")
             
-            # AJANDA KISMINI HERKES GÖREBİLİR (SAHA MÜHENDİSİ DAHİL)
             st.subheader(_t("ajanda_baslik"), divider="gray")
             df_depo_anlik = sql_depo_urun_getir(kullanici)
             depo_secenekleri = ["-- Depodan Ürün Kullanma --"] + (df_depo_anlik.apply(lambda r: f"ID:{r['id']} | {r['urun_adi']} (Kalan: {r['miktar']} {r['birim']})", axis=1).tolist() if not df_depo_anlik.empty else [])
@@ -928,7 +942,6 @@ else:
                     
                     st.write("---")
                     y_tarih = st.date_input("Tarih:")
-                    # Eğer personel ise parasal işlem giremesin (Sadece işlemi ve depodan düşümü kaydetsin)
                     if aktif_rol in ["Yönetici", "Muhasebe & İK"]:
                         y_maliyet = st.number_input("İşçilik/Ek Maliyet (TL):", min_value=0.0, step=100.0)
                     else:
